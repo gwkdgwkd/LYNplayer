@@ -9,3 +9,6 @@
 
 # build ffmpeg
  - cd ffmpeg;source build.sh
+
+# clear ffmpeg
+ - cd ffmpeg;./build.sh clear

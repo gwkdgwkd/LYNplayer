@@ -15,7 +15,7 @@ build()
 		rm libsdl1.2_* -rf
 	fi
 	cd ${SDL1DIR}
-	patch -R -p0 < ../patch/SDL_x11sym.patch
+	patch -R -p0 < ../patch/SDL_x11sym.patch 1>/dev/null
 	./configure --prefix=${SDLDIR}/${SDL1BUILD}
 	make
 	make install

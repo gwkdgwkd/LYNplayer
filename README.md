@@ -19,3 +19,6 @@
 
 # add build ffmpeg only
  - cd ffmpeg;source build.sh ffmpeg
+
+# add Makefile to build player
+ - cd player;make

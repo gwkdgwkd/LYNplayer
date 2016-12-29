@@ -16,3 +16,6 @@
 # build and clear SDL
  - build: cd SDL;source build.sh
  - clear: cd SDL;./build.sh clear
+
+# add build ffmpeg only
+ - cd ffmpeg;source build.sh ffmpeg

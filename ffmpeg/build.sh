@@ -3,15 +3,31 @@
 #https://trac.ffmpeg.org/wiki/CompilationGuide/Ubuntu#RevertingChangesMadebyThisGuideCompile%20FFmpeg%20on%20Ubuntu,%20Debian,%20or%20Mint
 #http://blog.csdn.net/leechee_1986/article/details/41891119
 
+FFMPEGDIR=`pwd`
+BUILD=${FFMPEGDIR}/ffmpeg_build
+
+YASM=yasm-1.3.0
+YASMTAR=${YASM}.tar.gz
+LIBX264=x264-snapshot*
+LIBX264TAR=last_x264.tar.bz2
+LIBFDKAAC=mstorsjo-fdk-aac*
+LIBFDKAACTAR=fdk-aac.zip
+LIBMP3LAME=lame-3.99.5
+LIBMP3LAMETAR=lame-3.99.5.tar.gz
+LIBOPUS=opus-1.1
+LIBOPUSTAR=opus-1.1.tar.gz
+LIBVPX=libvpx-1.6.0
+LIBVPXTAR=libvpx-1.6.0.tar.bz2
+FFMPEG=ffmpeg
+FFMPEGTAR=ffmpeg-snapshot.tar.bz2
+
 clear()
 {
-	rm ffmpeg ffmpeg-snapshot.tar.bz2 lame-3.99.5.tar.gz libvpx-1.6.0 mstorsjo-fdk-aac-5fd7e65 opus-1.1.tar.gz yasm-1.3.0 fdk-aac.zip ffmpeg_build lame-3.99.5 last_x264.tar.bz2 libvpx-1.6.0.tar.bz2 opus-1.1 x264-snapshot* yasm-1.3.0.tar.gz -rf
+	rm ${YASM} ${YASMTAR} ${LIBX264} ${LIBX264TAR} ${LIBFDKAAC} ${LIBFDKAACTAR} ${LIBMP3LAME} ${LIBMP3LAMETAR} ${LIBOPUS} ${LIBOPUSTAR} ${LIBVPX} ${LIBVPXTAR} ${FFMPEG} ${FFMPEGTAR} ${BUILD} -rf
 }
 
 build()
 {
-	FFMPEGDIR=`pwd`
-
 	#sudo apt-get update
 	#sudo apt-get -y install autoconf automake build-essential libass-dev libfreetype6-dev libgpac-dev \
 	#  libsdl1.2-dev libtheora-dev libtool libva-dev libvdpau-dev libvorbis-dev libx11-dev \
@@ -19,11 +35,8 @@ build()
 	#mkdir ~/ffmpeg_sources
 
 	mkdir -p ffmpeg_build
-	BUILD=${FFMPEGDIR}/ffmpeg_build
 
 	# Yasm
-	YASM=yasm-1.3.0
-	YASMTAR=${YASM}.tar.gz
 	if [ ! -e ${YASMTAR} ];then
 		wget http://www.tortall.net/projects/yasm/releases/yasm-1.3.0.tar.gz
 	fi
@@ -39,8 +52,6 @@ build()
 	cd ${FFMPEGDIR}
 
 	# libx264
-	LIBX264=x264-snapshot*
-	LIBX264TAR=last_x264.tar.bz2
 	if [ ! -e ${LIBX264TAR} ];then
 		wget http://download.videolan.org/pub/x264/snapshots/last_x264.tar.bz2
 	fi
@@ -56,8 +67,6 @@ build()
 	cd ${FFMPEGDIR}
 
 	# libfdk-aac
-	LIBFDKAAC=mstorsjo-fdk-aac*
-	LIBFDKAACTAR=fdk-aac.zip
 	if [ ! -e ${LIBFDKAACTAR} ];then
 		wget -O fdk-aac.zip https://github.com/mstorsjo/fdk-aac/zipball/master
 	fi
@@ -74,8 +83,6 @@ build()
 	cd ${FFMPEGDIR}
 
 	# libmp3lame
-	LIBMP3LAME=lame-3.99.5
-	LIBMP3LAMETAR=lame-3.99.5.tar.gz
 	if [ ! -e ${LIBMP3LAMETAR} ];then
 		wget http://downloads.sourceforge.net/project/lame/lame/3.99/lame-3.99.5.tar.gz --no-check-certificate
 	fi
@@ -91,8 +98,6 @@ build()
 	cd ${FFMPEGDIR}
 
 	# libopus
-	LIBOPUS=opus-1.1
-	LIBOPUSTAR=opus-1.1.tar.gz
 	if [ ! -e ${LIBOPUSTAR} ];then
 		wget http://downloads.xiph.org/releases/opus/opus-1.1.tar.gz
 	fi
@@ -108,8 +113,6 @@ build()
 	cd ${FFMPEGDIR}
 
 	# libvpx
-	LIBVPX=libvpx-1.6.0
-	LIBVPXTAR=libvpx-1.6.0.tar.bz2
 	if [ ! -e ${LIBVPXTAR} ];then
 		wget http://storage.googleapis.com/downloads.webmproject.org/releases/webm/libvpx-1.6.0.tar.bz2
 	fi
@@ -126,8 +129,13 @@ build()
 	cd ${FFMPEGDIR}
 
 	# ffmpeg
-	FFMPEG=ffmpeg
-	FFMPEGTAR=1ffmpeg-snapshot.tar.bz2
+	build_ffmpeg
+
+	cd ${FFMPEGDIR}
+}
+
+build_ffmpeg()
+{
 	if [ ! -e ${FFMPEGTAR} ];then
 		wget http://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
 	fi
@@ -135,7 +143,7 @@ build()
 		tar xjvf ffmpeg-snapshot.tar.bz2
 	fi
 	cd ${FFMPEG}
-	PATH="$BUILD/bin:$PATH" PKG_CONFIG_PATH="$BUILD/lib/pkgconfig" ./configure \
+	PATH="$BUILD/bin:$PATH" PKG_CONFIG_PATH="$BUILD/lib/pkgconfig:../../SDL/sdl2_build/lib/pkgconfig/" ./configure \
 	  --prefix="$BUILD" \
 	  --extra-cflags="-I$BUILD/include" \
 	  --extra-ldflags="-L$BUILD/lib" \
@@ -162,6 +170,8 @@ build()
 
 if [ "$1" == "clear" ];then
 	clear
+elif [ "$1" == "ffmpeg" ];then
+	build_ffmpeg
 else
 	build
 fi

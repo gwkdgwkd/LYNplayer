@@ -8,7 +8,7 @@ ffmpeg/lame-3.99.5/
 ffmpeg/last_x264.tar.bz2
 ffmpeg/libvpx-1.6.0.tar.bz2
 ffmpeg/libvpx-1.6.0/
-ffmpeg/mstorsjo-fdk-aac-5fd7e65/
+ffmpeg/mstorsjo-fdk-aac-*
 ffmpeg/opus-1.1.tar.gz
 ffmpeg/opus-1.1/
 ffmpeg/x264-snapshot-*

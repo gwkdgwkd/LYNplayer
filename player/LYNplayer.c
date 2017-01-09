@@ -5,12 +5,16 @@
 
 #include <stdio.h>
 
+#include <SDL/SDL.h>
+#include <SDL/SDL_thread.h>
+
 /* compatibility with newer API */
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT( 55, 28, 1 )
 #define av_frame_alloc    avcodec_alloc_frame
 #define av_frame_free    avcodec_free_frame
 #endif
 
+#if 0
 void SaveFrame( AVFrame *pFrame, int width, int height, int iFrame )
 {
     FILE    *pFile;
@@ -33,7 +37,7 @@ void SaveFrame( AVFrame *pFrame, int width, int height, int iFrame )
     /* Close file */
     fclose( pFile );
 }
-
+#endif
 
 int main( int argc, char *argv[] )
 {
@@ -44,12 +48,17 @@ int main( int argc, char *argv[] )
     AVCodecContext        *pCodecCtx    = NULL;
     AVCodec            *pCodec        = NULL;
     AVFrame            *pFrame        = NULL;
-    AVFrame            *pFrameRGB    = NULL;
+    //AVFrame            *pFrameRGB    = NULL;
     AVPacket        packet;
     int            frameFinished;
-    int            numBytes;
-    uint8_t            *buffer        = NULL;
+    //int            numBytes;
+    //uint8_t            *buffer        = NULL;
     struct SwsContext    *sws_ctx    = NULL;
+    float           aspect_ratio;
+    SDL_Overlay     *bmp;
+    SDL_Surface     *screen;
+    SDL_Rect        rect;
+    SDL_Event       event;
 
     if ( argc < 2 )
     {
@@ -58,6 +67,11 @@ int main( int argc, char *argv[] )
     }
     /* Register all formats and codecs */
     av_register_all();
+
+    if ( SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER ) ) {
+        fprintf(stderr, "Could not initialize SDL - %s\n", SDL_GetError());
+        exit(1);
+    }
 
     /* Open video file */
     if ( avformat_open_input( &pFormatCtx, argv[1], NULL, NULL ) != 0 )
@@ -105,6 +119,7 @@ int main( int argc, char *argv[] )
     /* Allocate video frame */
     pFrame = av_frame_alloc();
 
+#if 0
     /* Allocate an AVFrame structure */
     pFrameRGB = av_frame_alloc();
     if ( pFrameRGB == NULL )
@@ -122,6 +137,24 @@ int main( int argc, char *argv[] )
      */
     avpicture_fill( (AVPicture *) pFrameRGB, buffer, AV_PIX_FMT_RGB24,
             pCodecCtx->width, pCodecCtx->height );
+#endif
+
+    // Make a screen to put our video
+#ifndef __DARWIN__
+    screen = SDL_SetVideoMode(pCodecCtx->width, pCodecCtx->height, 0, 0);
+#else
+    screen = SDL_SetVideoMode(pCodecCtx->width, pCodecCtx->height, 24, 0);
+#endif
+    if ( !screen ) {
+        fprintf(stderr, "SDL: could not set video mode - exiting\n");
+        exit(1);
+    }
+
+    // Allocate a place to put our YUV image on that screen
+    bmp = SDL_CreateYUVOverlay(pCodecCtx->width,
+                   pCodecCtx->height,
+                   SDL_YV12_OVERLAY,
+                   screen);
 
     /* initialize SWS context for software scaling */
     sws_ctx = sws_getContext( pCodecCtx->width,
@@ -149,24 +182,55 @@ int main( int argc, char *argv[] )
             /* Did we get a video frame? */
             if ( frameFinished )
             {
+                SDL_LockYUVOverlay( bmp );
+
+                AVPicture pict;
+                pict.data[0] = bmp->pixels[0];
+                pict.data[1] = bmp->pixels[2];
+                pict.data[2] = bmp->pixels[1];
+
+                pict.linesize[0] = bmp->pitches[0];
+                pict.linesize[1] = bmp->pitches[2];
+                pict.linesize[2] = bmp->pitches[1];
+
                 /* Convert the image from its native format to RGB */
                 sws_scale( sws_ctx, (uint8_t const * const *) pFrame->data,
                        pFrame->linesize, 0, pCodecCtx->height,
-                       pFrameRGB->data, pFrameRGB->linesize );
+                       pict.data, pict.linesize );
 
+                SDL_UnlockYUVOverlay( bmp );
+
+                rect.x = 0;
+                rect.y = 0;
+                rect.w = pCodecCtx->width;
+                rect.h = pCodecCtx->height;
+                SDL_DisplayYUVOverlay( bmp, &rect );
+
+#if 0
                 /* Save the frame to disk */
                 //if ( ++i <= 5 )
                 SaveFrame( pFrameRGB, pCodecCtx->width, pCodecCtx->height, i++ );
-            }
+#endif
         }
-
-        /* Free the packet that was allocated by av_read_frame */
-        av_free_packet( &packet );
     }
 
+    /* Free the packet that was allocated by av_read_frame */
+    av_free_packet( &packet );
+    SDL_PollEvent(&event);
+    switch(event.type) {
+        case SDL_QUIT:
+            SDL_Quit();
+            exit(0);
+            break;
+        default:
+            break;
+    }
+}
+#if 0
     /* Free the RGB image */
     av_free( buffer );
     av_frame_free( &pFrameRGB );
+#endif
 
     /* Free the YUV frame */
     av_frame_free( &pFrame );

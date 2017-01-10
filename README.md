@@ -22,3 +22,6 @@
 
 # add Makefile to build player
  - cd player;make
+
+# code format
+ - use cmd "indent -kr -i4 LYNplayer.c"

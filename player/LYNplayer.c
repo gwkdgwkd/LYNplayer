@@ -14,32 +14,6 @@
 #define av_frame_free    avcodec_free_frame
 #endif
 
-#if 0
-void SaveFrame(AVFrame * pFrame, int width, int height, int iFrame)
-{
-    FILE *pFile;
-    char szFilename[32];
-    int y;
-
-    /* Open file */
-    sprintf(szFilename, "frame%d.ppm", iFrame);
-    pFile = fopen(szFilename, "wb");
-    if (pFile == NULL)
-	return;
-
-    /* Write header */
-    fprintf(pFile, "P6\n%d %d\n255\n", width, height);
-
-    /* Write pixel data */
-    for (y = 0; y < height; y++)
-	fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3,
-	       pFile);
-
-    /* Close file */
-    fclose(pFile);
-}
-#endif
-
 int main(int argc, char *argv[])
 {
     /* Initalizing these to NULL prevents segfaults! */
@@ -49,11 +23,8 @@ int main(int argc, char *argv[])
     AVCodecContext *pCodecCtx = NULL;
     AVCodec *pCodec = NULL;
     AVFrame *pFrame = NULL;
-    //AVFrame            *pFrameRGB    = NULL;
     AVPacket packet;
     int frameFinished;
-    //int            numBytes;
-    //uint8_t            *buffer        = NULL;
     struct SwsContext *sws_ctx = NULL;
     float aspect_ratio;
     SDL_Overlay *bmp;
@@ -117,26 +88,6 @@ int main(int argc, char *argv[])
     /* Allocate video frame */
     pFrame = av_frame_alloc();
 
-#if 0
-    /* Allocate an AVFrame structure */
-    pFrameRGB = av_frame_alloc();
-    if (pFrameRGB == NULL)
-	return (-1);
-
-    /* Determine required buffer size and allocate buffer */
-    numBytes = avpicture_get_size(AV_PIX_FMT_RGB24, pCodecCtx->width,
-				  pCodecCtx->height);
-    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-
-    /*
-     * Assign appropriate parts of buffer to image planes in pFrameRGB
-     * Note that pFrameRGB is an AVFrame, but AVFrame is a superset
-     * of AVPicture
-     */
-    avpicture_fill((AVPicture *) pFrameRGB, buffer, AV_PIX_FMT_RGB24,
-		   pCodecCtx->width, pCodecCtx->height);
-#endif
-
     // Make a screen to put our video
 #ifndef __DARWIN__
     screen = SDL_SetVideoMode(pCodecCtx->width, pCodecCtx->height, 0, 0);
@@ -195,13 +146,6 @@ int main(int argc, char *argv[])
 		rect.w = pCodecCtx->width;
 		rect.h = pCodecCtx->height;
 		SDL_DisplayYUVOverlay(bmp, &rect);
-
-#if 0
-		/* Save the frame to disk */
-		//if ( ++i <= 5 )
-		SaveFrame(pFrameRGB, pCodecCtx->width, pCodecCtx->height,
-			  i++);
-#endif
 	    }
 	}
 
@@ -217,11 +161,6 @@ int main(int argc, char *argv[])
 	    break;
 	}
     }
-#if 0
-    /* Free the RGB image */
-    av_free(buffer);
-    av_frame_free(&pFrameRGB);
-#endif
 
     /* Free the YUV frame */
     av_frame_free(&pFrame);

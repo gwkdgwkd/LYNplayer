@@ -24,4 +24,4 @@
  - cd player;make
 
 # code format
- - use cmd "indent -kr -i4 LYNplayer.c"
+ - use cmd "indent -kr -i4 -ts0 LYNplayer.c"

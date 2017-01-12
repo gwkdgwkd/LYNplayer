@@ -19,5 +19,5 @@ SDL/libsdl2-2.0.2+dfsg1/
 SDL/sdl1.2_build/
 SDL/sdl2_build/
 player/LYNplayer
-player/LYNplayer.o
+player/*.o
 

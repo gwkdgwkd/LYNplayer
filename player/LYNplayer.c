@@ -9,13 +9,15 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_thread.h>
 
+#include "LYNtype.h"
+
 /* compatibility with newer API */
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT( 55, 28, 1 )
 #define av_frame_alloc    avcodec_alloc_frame
 #define av_frame_free    avcodec_free_frame
 #endif
 
-int main(int argc, char *argv[])
+int play_vedio(cmdArgsPtr args)
 {
     /* Initalizing these to NULL prevents segfaults! */
     AVFormatContext *pFormatCtx = NULL;
@@ -32,24 +34,6 @@ int main(int argc, char *argv[])
     SDL_Surface *screen;
     SDL_Rect rect;
     SDL_Event event;
-    int ch;
-    char *path;
-
-    if (argc < 2) {
-        printf("Please provide a movie file\n");
-        return (-1);
-    }
-
-    opterr = 0;
-    while ((ch = getopt(argc, argv, "p:")) != -1) {
-        switch (ch) {
-        case 'p':
-            path = optarg;
-            break;
-        default:
-            printf("other option :%c\n", ch);
-        }
-    }
 
     /* Register all formats and codecs */
     av_register_all();
@@ -60,7 +44,7 @@ int main(int argc, char *argv[])
     }
 
     /* Open video file */
-    if (avformat_open_input(&pFormatCtx, path, NULL, NULL) != 0)
+    if (avformat_open_input(&pFormatCtx, args->infile, NULL, NULL) != 0)
         return (-1);            /* Couldn't open file */
 
     /* Retrieve stream information */
@@ -68,7 +52,7 @@ int main(int argc, char *argv[])
         return (-1);            /* Couldn't find stream information */
 
     /* Dump information about file onto standard error */
-    av_dump_format(pFormatCtx, 0, argv[1], 0);
+    av_dump_format(pFormatCtx, 0, args->infile, 0);
 
     /* Find the first video stream */
     videoStream = -1;

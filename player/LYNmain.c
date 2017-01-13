@@ -5,10 +5,11 @@
 #include "LYNtype.h"
 
 extern int play_vedio(cmdArgsPtr args);
+extern int video2yuv(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", play_vedio},
-    {ACIDVEDIO2YUV, "vedio2yuv", NULL},
+    {ACIDVEDIO2YUV, "vedio2yuv", video2yuv},
     {ACIDVEDIO2YUVS, "vedio2yuvs", NULL},
 };
 
@@ -46,6 +47,7 @@ int main(int argc, char *argv[])
     }
 
     if (id < 0) {
+        printf("no matching parameters of -t\n");
         return -1;
     }
 

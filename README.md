@@ -25,3 +25,6 @@
 
 # code format
  - use cmd "indent -kr -i4 -ts0 LYNplayer.c"
+
+# video to RGB24
+ - ./LYNplayer file -t vedio2yuv

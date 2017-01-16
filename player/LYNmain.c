@@ -5,12 +5,15 @@
 #include "LYNtype.h"
 
 extern int play_vedio(cmdArgsPtr args);
+extern int video2rgb(cmdArgsPtr args);
 extern int video2yuv(cmdArgsPtr args);
+extern int video2yuvs(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", play_vedio},
+    {ACIDVEDIO2RGB, "vedio2rgb", video2rgb},
     {ACIDVEDIO2YUV, "vedio2yuv", video2yuv},
-    {ACIDVEDIO2YUVS, "vedio2yuvs", NULL},
+    {ACIDVEDIO2YUVS, "vedio2yuvs", video2yuvs},
 };
 
 int find_action(char *actname)

@@ -5,6 +5,7 @@
 
 typedef enum actionId {
     ACIDPLAY,
+    ACIDVEDIO2RGB,
     ACIDVEDIO2YUV,
     ACIDVEDIO2YUVS,
     ACIDMAXID
@@ -22,3 +23,19 @@ typedef struct action {
     char *name;
     doAction fun;
 } action, *actionPtr;
+
+typedef struct inFile {
+    AVFormatContext *pFormatCtx;
+    int videoStream;
+    AVCodecContext *pCodecCtxOrig;
+    AVCodecContext *pCodecCtx;
+    AVCodec *pCodec;
+    AVFrame *pFrame;
+    AVFrame *pFrameTarget;
+    AVPacket packet;
+    int frameFinished;
+    int numBytes;
+    uint8_t *buffer;
+    struct SwsContext *sws_ctx;
+    enum AVPixelFormat format;
+} inFile, *inFilePtr;

@@ -2,26 +2,36 @@
 
 #include "LYNtype.h"
 
-void SaveFrame(AVFrame * pFrame, int width, int height, int iFrame)
+void save_frame(AVFrame * pFrame, int width, int height, int iFrame,
+                enum AVPixelFormat format, const char *outfile)
 {
     FILE *pFile;
     char szFilename[32];
     int y;
 
     // Open file
-    sprintf(szFilename, "frame%d.ppm", iFrame);
-    pFile = fopen(szFilename, "wb");
+    sprintf(szFilename, "%s%d.%s", outfile, iFrame,
+            (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv");
+    pFile = fopen(szFilename, "ab");
     if (pFile == NULL)
         return;
 
-    // Write header
-    fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+    if (AV_PIX_FMT_RGB24 == format) {
+        // Write header
+        fprintf(pFile, "P6\n%d %d\n255\n", width, height);
 
-    // Write pixel data
-    for (y = 0; y < height; y++)
-        fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3,
-               pFile);
-
+        // Write pixel data
+        for (y = 0; y < height; y++) {
+            fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3,
+                   pFile);
+        }
+    } else if (AV_PIX_FMT_YUV420P == format) {
+        fwrite(pFrame->data[0], width * height, 1, pFile);
+        fwrite(pFrame->data[1], width * height / 4, 1, pFile);
+        fwrite(pFrame->data[2], width * height / 4, 1, pFile);
+    } else if (AV_PIX_FMT_YUV422P == format) {
+        fwrite(pFrame->data[0], width * height, 2, pFile);
+    }
     // Close file
     fclose(pFile);
 }
@@ -80,7 +90,7 @@ int open_in_file(inFilePtr in, cmdArgsPtr args)
 
     // Determine required buffer size and allocate buffer
     in->numBytes =
-        avpicture_get_size(AV_PIX_FMT_RGB24, in->pCodecCtx->width,
+        avpicture_get_size(in->format, in->pCodecCtx->width,
                            in->pCodecCtx->height);
     in->buffer = (uint8_t *) av_malloc(in->numBytes * sizeof(uint8_t));
 
@@ -88,7 +98,7 @@ int open_in_file(inFilePtr in, cmdArgsPtr args)
     // Note that pFrameRGB is an AVFrame, but AVFrame is a superset
     // of AVPicture
     avpicture_fill((AVPicture *) in->pFrameTarget, in->buffer,
-                   AV_PIX_FMT_RGB24, in->pCodecCtx->width,
+                   in->format, in->pCodecCtx->width,
                    in->pCodecCtx->height);
 
     // initialize SWS context for software scaling
@@ -97,12 +107,12 @@ int open_in_file(inFilePtr in, cmdArgsPtr args)
                                  in->pCodecCtx->pix_fmt,
                                  in->pCodecCtx->width,
                                  in->pCodecCtx->height,
-                                 AV_PIX_FMT_RGB24,
+                                 in->format,
                                  SWS_BILINEAR, NULL, NULL, NULL);
     return 0;
 }
 
-int do_decode(cmdArgsPtr args,enum AVPixelFormat format)
+int do_decode(cmdArgsPtr args, enum AVPixelFormat format, int fileflag)
 {
     inFile infile;
     int i, ret;
@@ -113,7 +123,7 @@ int do_decode(cmdArgsPtr args,enum AVPixelFormat format)
     memset(&infile, 0, sizeof(inFile));
     infile.format = format;
     if ((ret = open_in_file(&infile, args)) < 0) {
-        printf("open in file failed!");
+        printf("open in file failed!\n");
         return ret;
     }
     // Read frames and save first five frames to disk
@@ -136,9 +146,11 @@ int do_decode(cmdArgsPtr args,enum AVPixelFormat format)
                           infile.pFrameTarget->linesize);
 
                 // Save the frame to disk
-                if (++i <= 5)
-                    SaveFrame(infile.pFrameTarget, infile.pCodecCtx->width,
-                              infile.pCodecCtx->height, i);
+                if (++i <= args->framenum || 0 == args->framenum)
+                    save_frame(infile.pFrameTarget,
+                               infile.pCodecCtx->width,
+                               infile.pCodecCtx->height, i * fileflag,
+                               format, args->outfile);
             }
         }
         // Free the packet that was allocated by av_read_frame
@@ -162,18 +174,27 @@ int do_decode(cmdArgsPtr args,enum AVPixelFormat format)
     return 0;
 }
 
-int video2rgb(cmdArgsPtr args)
+int video2rgbfiles(cmdArgsPtr args)
 {
-    return do_decode(args,AV_PIX_FMT_RGB24);
+    return do_decode(args, AV_PIX_FMT_RGB24, 1);
 }
 
-int video2yuv(cmdArgsPtr args)
+int vedio2yuv422pfiles(cmdArgsPtr args)
 {
-    return do_decode(args,AV_PIX_FMT_YUV420P);
+    return do_decode(args, AV_PIX_FMT_YUV422P, 1);
 }
 
-int video2yuvs(cmdArgsPtr args)
+int vedio2yuv422pfile(cmdArgsPtr args)
 {
+    return do_decode(args, AV_PIX_FMT_YUV422P, 0);
+}
 
-    return 0;
+int vedio2yuv420pfiles(cmdArgsPtr args)
+{
+    return do_decode(args, AV_PIX_FMT_YUV420P, 1);
+}
+
+int vedio2yuv420pfile(cmdArgsPtr args)
+{
+    return do_decode(args, AV_PIX_FMT_YUV420P, 0);
 }

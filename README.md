@@ -44,6 +44,6 @@
  - no arg -n (default 5)
  - if no outfile,default outfile name is frame
 
-# add video
+# add play yuv file
  - ./LYNplayer *.yuv -w640 -h360
  - default 176 144 if no w and h

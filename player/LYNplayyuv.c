@@ -10,9 +10,9 @@ int play_yuv420p(cmdArgsPtr args)
     SDL_Rect rect;
     SDL_Event event;
     FILE *fp;
-    int filesize, framesize, framenum, frame = 0;
+    int filesize, framesize, framenum, frame = 1;
     char caption[100];
-    int isplay = 1;
+    int isplay = 0, isdown = 0;
 
     fp = fopen(args->infile, "rb");
     if (fp == NULL) {
@@ -45,30 +45,39 @@ int play_yuv420p(cmdArgsPtr args)
     bmp = SDL_CreateYUVOverlay(args->width,
                                args->height, SDL_YV12_OVERLAY, screen);
     while (!feof(fp)) {
+        if (1 == isplay || 1 == frame) {
+            memset(caption, 0, sizeof(caption));
+            sprintf(caption, "%s,%d/%d,%s", args->infile, frame++,
+                    framenum, isplay == 1 ? "play" : "pause");
+            SDL_WM_SetCaption(caption, NULL);
+            SDL_LockYUVOverlay(bmp);
 
-        memset(caption, 0, sizeof(caption));
-        sprintf(caption, "%s,%d/%d,%s", args->infile, ++frame, framenum,
-                isplay == 1 ? "play" : "pause");
-        SDL_WM_SetCaption(caption, NULL);
-        SDL_LockYUVOverlay(bmp);
+            fread(bmp->pixels[0], args->width * args->height, 1, fp);
+            fread(bmp->pixels[2], args->width * args->height / 4, 1, fp);
+            fread(bmp->pixels[1], args->width * args->height / 4, 1, fp);
 
-        fread(bmp->pixels[0], args->width * args->height, 1, fp);
-        fread(bmp->pixels[2], args->width * args->height / 4, 1, fp);
-        fread(bmp->pixels[1], args->width * args->height / 4, 1, fp);
+            SDL_UnlockYUVOverlay(bmp);
 
-        SDL_UnlockYUVOverlay(bmp);
-
-        rect.x = 0;
-        rect.y = 0;
-        rect.w = args->width;
-        rect.h = args->height;
-        SDL_DisplayYUVOverlay(bmp, &rect);
-
+            rect.x = 0;
+            rect.y = 0;
+            rect.w = args->width;
+            rect.h = args->height;
+            SDL_DisplayYUVOverlay(bmp, &rect);
+        }
         SDL_PollEvent(&event);
         switch (event.type) {
         case SDL_QUIT:
             SDL_Quit();
             exit(0);
+            break;
+        case SDL_KEYDOWN:
+            switch (event.key.keysym.sym) {
+            case 'p':
+                isdown = 1;
+                break;
+            default:
+                break;
+            }
             break;
         case SDL_KEYUP:
             switch (event.key.keysym.sym) {
@@ -77,7 +86,10 @@ int play_yuv420p(cmdArgsPtr args)
                 exit(0);
                 break;
             case 'p':
-                isplay = (isplay == 1) ? 0 : 1;
+                if (isdown == 1) {
+                    isplay = (isplay == 1) ? 0 : 1;
+                    isdown = 0;
+                }
                 break;
             default:
                 break;

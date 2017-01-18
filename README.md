@@ -47,3 +47,6 @@
 # add play yuv file
  - ./LYNplayer *.yuv -w640 -h360
  - default 176 144 if no w and h
+
+# let yuv player can be pause
+ - press p

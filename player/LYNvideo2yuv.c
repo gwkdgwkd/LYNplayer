@@ -179,22 +179,22 @@ int video2rgbfiles(cmdArgsPtr args)
     return do_decode(args, AV_PIX_FMT_RGB24, 1);
 }
 
-int vedio2yuv422pfiles(cmdArgsPtr args)
+int video2yuv422pfiles(cmdArgsPtr args)
 {
     return do_decode(args, AV_PIX_FMT_YUV422P, 1);
 }
 
-int vedio2yuv422pfile(cmdArgsPtr args)
+int video2yuv422pfile(cmdArgsPtr args)
 {
     return do_decode(args, AV_PIX_FMT_YUV422P, 0);
 }
 
-int vedio2yuv420pfiles(cmdArgsPtr args)
+int video2yuv420pfiles(cmdArgsPtr args)
 {
     return do_decode(args, AV_PIX_FMT_YUV420P, 1);
 }
 
-int vedio2yuv420pfile(cmdArgsPtr args)
+int video2yuv420pfile(cmdArgsPtr args)
 {
     return do_decode(args, AV_PIX_FMT_YUV420P, 0);
 }

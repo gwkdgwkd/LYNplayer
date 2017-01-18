@@ -30,16 +30,20 @@
  - ./LYNplayer file -t vedio2rgb
 
 # add video to yuv
- - ./LYNplayer infile outfile -n15 -t vedio2yuv422pfile
+ - ./LYNplayer infile outfile -n15 -t video2yuv422pfile
  - arg -t :
  - play (if no -t, play is default)
- - vedio2rgb24files
- - vedio2yuv422pfiles
- - vedio2yuv422pfile
- - vedio2yuv420pfiles
- - vedio2yuv420pfile
+ - video2rgb24files
+ - video2yuv422pfiles
+ - video2yuv422pfile
+ - video2yuv420pfiles
+ - video2yuv420pfile
  - arg -n (frame num):
  - 0 (all frame)
  - num 
  - no arg -n (default 5)
  - if no outfile,default outfile name is frame
+
+# add video
+ - ./LYNplayer *.yuv -w640 -h360
+ - default 176 144 if no w and h

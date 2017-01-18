@@ -8,14 +8,17 @@
 
 #define DEFAULTOUTPUTFILE "frame"
 #define DEFAULTFRAMENUM 5
+#define DEFAULTWIDTH 176
+#define DEFAULTHEIGHT 144
 
 typedef enum actionId {
     ACIDPLAY,
-    ACIDVEDIO2RGB24FILES,
-    ACIDVEDIO2YUV422PFILES,
-    ACIDVEDIO2YUV422PFILE,
-    ACIDVEDIO2YUV420PFILES,
-    ACIDVEDIO2YUV420PFILE,
+    ACIDPLAYYUV420P,
+    ACIDVIDEO2RGB24FILES,
+    ACIDVIDEO2YUV422PFILES,
+    ACIDVIDEO2YUV422PFILE,
+    ACIDVIDEO2YUV420PFILES,
+    ACIDVIDEO2YUV420PFILE,
     ACIDMAXID
 } actionId;
 
@@ -23,6 +26,8 @@ typedef struct cmdArgs {
     char *infile;
     char *outfile;
     int framenum;
+    int width;
+    int height;
 } cmdArgs, *cmdArgsPtr;
 
 typedef int (*doAction) (cmdArgsPtr args);

@@ -50,3 +50,6 @@
 
 # let yuv player can be pause
  - press p
+
+# seek yuv player
+ - use up,down,right,left seek 5 or 1 frame

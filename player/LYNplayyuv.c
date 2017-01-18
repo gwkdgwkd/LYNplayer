@@ -12,7 +12,7 @@ int play_yuv420p(cmdArgsPtr args)
     FILE *fp;
     int filesize, framesize, framenum, frame = 1;
     char caption[100];
-    int isplay = 0, isdown = 0;
+    int isplay = 0, isdown = 0, seek = 0;
 
     fp = fopen(args->infile, "rb");
     if (fp == NULL) {
@@ -45,11 +45,22 @@ int play_yuv420p(cmdArgsPtr args)
     bmp = SDL_CreateYUVOverlay(args->width,
                                args->height, SDL_YV12_OVERLAY, screen);
     while (!feof(fp)) {
-        if (1 == isplay || 1 == frame) {
+        if (1 == isplay || 1 == frame || seek != 0) {
+            if (seek != 0) {
+                seek -= 1;
+                frame += seek;
+            }
             memset(caption, 0, sizeof(caption));
-            sprintf(caption, "%s,%d/%d,%s", args->infile, frame++,
+            sprintf(caption, "%s,%d/%d,%s", args->infile, frame,
                     framenum, isplay == 1 ? "play" : "pause");
             SDL_WM_SetCaption(caption, NULL);
+
+            if (seek != 0) {
+                fseek(fp, seek * framesize, SEEK_CUR);
+                seek = 0;
+            } else {
+                frame++;
+            }
             SDL_LockYUVOverlay(bmp);
 
             fread(bmp->pixels[0], args->width * args->height, 1, fp);
@@ -72,6 +83,10 @@ int play_yuv420p(cmdArgsPtr args)
             break;
         case SDL_KEYDOWN:
             switch (event.key.keysym.sym) {
+            case SDLK_UP:
+            case SDLK_DOWN:
+            case SDLK_LEFT:
+            case SDLK_RIGHT:
             case 'p':
                 isdown = 1;
                 break;
@@ -88,6 +103,30 @@ int play_yuv420p(cmdArgsPtr args)
             case 'p':
                 if (isdown == 1) {
                     isplay = (isplay == 1) ? 0 : 1;
+                    isdown = 0;
+                }
+                break;
+            case SDLK_UP:
+                if (isdown == 1) {
+                    seek = 5;
+                    isdown = 0;
+                }
+                break;
+            case SDLK_DOWN:
+                if (isdown == 1) {
+                    seek = -5;
+                    isdown = 0;
+                }
+                break;
+            case SDLK_LEFT:
+                if (isdown == 1) {
+                    seek = -1;
+                    isdown = 0;
+                }
+                break;
+            case SDLK_RIGHT:
+                if (isdown == 1) {
+                    seek = 1;
                     isdown = 0;
                 }
                 break;

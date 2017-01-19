@@ -70,6 +70,9 @@ static void set_default_arg(cmdArgsPtr args, int actid)
     if (actid == ACIDPLAYYUV420P && args->height < 0) {
         args->height = DEFAULTHEIGHT;
     }
+    if (actid == ACIDPLAYYUV420P && args->framerate < 0) {
+        args->framerate = DEFAULTFRAMERATE;
+    }
 }
 
 static void init_args(cmdArgsPtr args)
@@ -79,6 +82,7 @@ static void init_args(cmdArgsPtr args)
     args->framenum = -1;
     args->width = -1;
     args->height = -1;
+    args->framerate = -1;
 }
 
 int main(int argc, char *argv[])
@@ -96,7 +100,7 @@ int main(int argc, char *argv[])
     init_args(&args);
 
     opterr = 0;
-    while ((ch = getopt(argc, argv, "t:n:w:h:")) != -1) {
+    while ((ch = getopt(argc, argv, "t:n:w:h:f:")) != -1) {
         switch (ch) {
         case 't':
             id = find_action(optarg);
@@ -110,6 +114,9 @@ int main(int argc, char *argv[])
             break;
         case 'h':
             args.height = atoi(optarg);
+            break;
+        case 'f':
+            args.framerate = atoi(optarg);
             break;
         default:
             printf("other option :%c {%s}\n", ch, optarg);

@@ -192,7 +192,7 @@ int play_yuv420p(cmdArgsPtr args)
         default:
             break;
         }
-        SDL_Delay(40);
+        SDL_Delay(args->framerate);
     }
 
     fclose(fp);

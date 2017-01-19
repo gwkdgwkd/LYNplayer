@@ -58,3 +58,6 @@
 
  - input frame num after press 'g',then enter
 
+# add arg -f for yuv player set frame rate
+ - ./LYNplayer *.yuv -wxx -hxx -f20
+ - default 40ms

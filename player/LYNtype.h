@@ -10,6 +10,7 @@
 #define DEFAULTFRAMENUM 5
 #define DEFAULTWIDTH 176
 #define DEFAULTHEIGHT 144
+#define DEFAULTFRAMERATE 40
 
 typedef enum actionId {
     ACIDPLAY,
@@ -28,6 +29,7 @@ typedef struct cmdArgs {
     int framenum;
     int width;
     int height;
+    int framerate;
 } cmdArgs, *cmdArgsPtr;
 
 typedef int (*doAction) (cmdArgsPtr args);

@@ -53,3 +53,8 @@
 
 # seek yuv player
  - use up,down,right,left seek 5 or 1 frame
+
+# add seek to some frame for yuv player
+
+ - input frame num after press 'g',then enter
+

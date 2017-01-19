@@ -13,7 +13,8 @@ int play_yuv420p(cmdArgsPtr args)
     long filesize;
     int framesize, framenum, frame = 1;
     char caption[256];
-    int isplay = 0, isdown = 0, seek = 0;
+    char seekto[10];
+    int isplay = 0, isdown = 0, seek = 0, isgo = 0;
 
     fp = fopen(args->infile, "rb");
     if (fp == NULL) {
@@ -82,6 +83,9 @@ int play_yuv420p(cmdArgsPtr args)
             memset(caption, 0, sizeof(caption));
             sprintf(caption, "%s,%d/%d,%s", args->infile, frame - 1,
                     framenum, isplay == 1 ? "play" : "pause");
+            if (isgo == 1) {
+                sprintf(caption + strlen(caption), ",seekto: %s", seekto);
+            }
             SDL_WM_SetCaption(caption, NULL);
         }
         SDL_PollEvent(&event);
@@ -91,11 +95,19 @@ int play_yuv420p(cmdArgsPtr args)
             exit(0);
             break;
         case SDL_KEYDOWN:
+            if ((event.key.keysym.sym >= '0')
+                && (event.key.keysym.sym <= '9') && 1 == isgo) {
+                isdown = 1;
+            }
             switch (event.key.keysym.sym) {
             case SDLK_UP:
             case SDLK_DOWN:
             case SDLK_LEFT:
             case SDLK_RIGHT:
+            case SDLK_RETURN:
+            case SDLK_BACKSPACE:
+            case SDLK_ESCAPE:
+            case 'g':
             case 'p':
                 isdown = 1;
                 break;
@@ -104,10 +116,44 @@ int play_yuv420p(cmdArgsPtr args)
             }
             break;
         case SDL_KEYUP:
+            if ((event.key.keysym.sym >= '0')
+                && (event.key.keysym.sym <= '9') && 1 == isgo) {
+                if (isdown == 1) {
+                    seekto[strlen(seekto)] = event.key.keysym.sym;
+                    isdown = 0;
+                }
+            }
             switch (event.key.keysym.sym) {
             case 'q':
                 SDL_Quit();
                 exit(0);
+                break;
+            case SDLK_ESCAPE:
+                if (isdown == 1 && isgo == 1) {
+                    isdown = 0;
+                    isgo = 0;
+                }
+                break;
+            case SDLK_BACKSPACE:
+                if (isdown == 1 && isgo == 1) {
+                    isdown = 0;
+                    seekto[strlen(seekto) - 1] = 0;
+                }
+                break;
+            case SDLK_RETURN:
+                if (isdown == 1 && isgo == 1) {
+                    isgo = 0;
+                    isdown = 0;
+                    frame = atoi(seekto) + 2;
+                    seek = -1;
+                }
+                break;
+            case 'g':
+                if (isdown == 1) {
+                    isgo = 1;
+                    memset(seekto, 0, sizeof(seekto));
+                    isdown = 0;
+                }
                 break;
             case 'p':
                 if (isdown == 1) {

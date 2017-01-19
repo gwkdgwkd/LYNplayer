@@ -10,8 +10,9 @@ int play_yuv420p(cmdArgsPtr args)
     SDL_Rect rect;
     SDL_Event event;
     FILE *fp;
-    int filesize, framesize, framenum, frame = 1;
-    char caption[100];
+    long filesize;
+    int framesize, framenum, frame = 1;
+    char caption[256];
     int isplay = 0, isdown = 0, seek = 0;
 
     fp = fopen(args->infile, "rb");
@@ -26,7 +27,7 @@ int play_yuv420p(cmdArgsPtr args)
     framesize = (args->width * args->height) * 3 / 2;
     framenum = filesize / framesize;
 
-    printf("file size : %d\n", filesize);
+    printf("file size : %ld\n", filesize);
     printf("frame size : %d\n", framesize);
     printf("frame num : %d\n", framenum);
 
@@ -47,20 +48,23 @@ int play_yuv420p(cmdArgsPtr args)
     while (!feof(fp)) {
         if (1 == isplay || 1 == frame || seek != 0) {
             if (seek != 0) {
-                seek -= 1;
-                frame += seek;
+                frame += seek - 1;
+                if (frame < 1) {
+                    frame = 1;
+                }
+                if (frame > framenum) {
+                    frame = framenum;
+                }
+                if (0 != seek - 1) {
+                    fseek(fp, (frame - 1) * framesize, SEEK_SET);
+                }
+                seek = 0;
             }
             memset(caption, 0, sizeof(caption));
-            sprintf(caption, "%s,%d/%d,%s", args->infile, frame,
+            sprintf(caption, "%s,%d/%d,%s", args->infile, frame++,
                     framenum, isplay == 1 ? "play" : "pause");
             SDL_WM_SetCaption(caption, NULL);
 
-            if (seek != 0) {
-                fseek(fp, seek * framesize, SEEK_CUR);
-                seek = 0;
-            } else {
-                frame++;
-            }
             SDL_LockYUVOverlay(bmp);
 
             fread(bmp->pixels[0], args->width * args->height, 1, fp);
@@ -74,6 +78,11 @@ int play_yuv420p(cmdArgsPtr args)
             rect.w = args->width;
             rect.h = args->height;
             SDL_DisplayYUVOverlay(bmp, &rect);
+        } else if (0 == isplay) {
+            memset(caption, 0, sizeof(caption));
+            sprintf(caption, "%s,%d/%d,%s", args->infile, frame - 1,
+                    framenum, isplay == 1 ? "play" : "pause");
+            SDL_WM_SetCaption(caption, NULL);
         }
         SDL_PollEvent(&event);
         switch (event.type) {
@@ -102,7 +111,7 @@ int play_yuv420p(cmdArgsPtr args)
                 break;
             case 'p':
                 if (isdown == 1) {
-                    isplay = (isplay == 1) ? 0 : 1;
+                    isplay = ((isplay == 1) ? 0 : 1);
                     isdown = 0;
                 }
                 break;

@@ -61,3 +61,8 @@
 # add arg -f for yuv player set frame rate
  - ./LYNplayer *.yuv -wxx -hxx -f20
  - default 40ms
+
+# add yuv420p to video (h264,hevc,MPEG*,VP*)
+ - ./LYNplayer frame0.yuv -tyuv420p2video -w640 -h360 -n0 [outfile]
+ - outfile default is video.*
+

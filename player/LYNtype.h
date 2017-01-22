@@ -6,7 +6,6 @@
 #define HAVEOUTPUT 1
 #define NOOUTPUT 0
 
-#define DEFAULTOUTPUTFILE "frame"
 #define DEFAULTFRAMENUM 5
 #define DEFAULTWIDTH 176
 #define DEFAULTHEIGHT 144
@@ -20,6 +19,7 @@ typedef enum actionId {
     ACIDVIDEO2YUV422PFILE,
     ACIDVIDEO2YUV420PFILES,
     ACIDVIDEO2YUV420PFILE,
+    ACIDYUV420P2VIDEO,
     ACIDMAXID
 } actionId;
 
@@ -38,6 +38,7 @@ typedef struct action {
     actionId id;
     char *name;
     int ishaveoutput;
+    char *defaultoutput;
     doAction fun;
 } action, *actionPtr;
 

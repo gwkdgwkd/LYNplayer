@@ -11,19 +11,23 @@ extern int video2yuv422pfiles(cmdArgsPtr args);
 extern int video2yuv422pfile(cmdArgsPtr args);
 extern int video2yuv420pfiles(cmdArgsPtr args);
 extern int video2yuv420pfile(cmdArgsPtr args);
+extern int yuv420p2video(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
-    {ACIDPLAY, "play", NOOUTPUT, play_vedio},
-    {ACIDPLAYYUV420P, "playyuv420p", NOOUTPUT, play_yuv420p},
-    {ACIDVIDEO2RGB24FILES, "video2rgb24files", HAVEOUTPUT, video2rgbfiles},
-    {ACIDVIDEO2YUV422PFILES, "video2yuv422pfiles", HAVEOUTPUT,
+    {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
+    {ACIDPLAYYUV420P, "playyuv420p", NOOUTPUT, NULL, play_yuv420p},
+    {ACIDVIDEO2RGB24FILES, "video2rgb24files", HAVEOUTPUT, "frame",
+     video2rgbfiles},
+    {ACIDVIDEO2YUV422PFILES, "video2yuv422pfiles", HAVEOUTPUT, "frame",
      video2yuv422pfiles},
-    {ACIDVIDEO2YUV422PFILE, "video2yuv422pfile", HAVEOUTPUT,
+    {ACIDVIDEO2YUV422PFILE, "video2yuv422pfile", HAVEOUTPUT, "frame",
      video2yuv422pfile},
-    {ACIDVIDEO2YUV420PFILES, "video2yuv420pfiles", HAVEOUTPUT,
+    {ACIDVIDEO2YUV420PFILES, "video2yuv420pfiles", HAVEOUTPUT, "frame",
      video2yuv420pfiles},
-    {ACIDVIDEO2YUV420PFILE, "video2yuv420pfile", HAVEOUTPUT,
+    {ACIDVIDEO2YUV420PFILE, "video2yuv420pfile", HAVEOUTPUT, "frame",
      video2yuv420pfile},
+    {ACIDYUV420P2VIDEO, "yuv420p2video", HAVEOUTPUT, "video",
+     yuv420p2video},
 };
 
 static int find_action(const char *actname)
@@ -59,7 +63,8 @@ static void set_default_arg(cmdArgsPtr args, int actid)
     if ((actid == ACIDVIDEO2RGB24FILES ||
          actid == ACIDVIDEO2YUV422PFILES ||
          actid == ACIDVIDEO2YUV422PFILE ||
-         actid == ACIDVIDEO2YUV420PFILES || actid == ACIDVIDEO2YUV420PFILE)
+         actid == ACIDVIDEO2YUV420PFILES || actid == ACIDVIDEO2YUV420PFILE
+         || actid == ACIDYUV420P2VIDEO)
         && args->framenum < 0) {
         args->framenum = DEFAULTFRAMENUM;
     }
@@ -70,7 +75,8 @@ static void set_default_arg(cmdArgsPtr args, int actid)
     if (actid == ACIDPLAYYUV420P && args->height < 0) {
         args->height = DEFAULTHEIGHT;
     }
-    if (actid == ACIDPLAYYUV420P && args->framerate < 0) {
+    if ((actid == ACIDPLAYYUV420P || actid == ACIDYUV420P2VIDEO)
+        && args->framerate < 0) {
         args->framerate = DEFAULTFRAMERATE;
     }
 }
@@ -85,12 +91,23 @@ static void init_args(cmdArgsPtr args)
     args->framerate = -1;
 }
 
+static int check_args_format(int id, cmdArgsPtr args)
+{
+    if ((id == ACIDPLAY && args->framenum >= 0) ||
+        (id == ACIDYUV420P2VIDEO && args->width < 0) ||
+        (id == ACIDYUV420P2VIDEO && args->height < 0)) {
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     int ch;
     cmdArgs args;
     int id = ACIDPLAY;
     int needadjust = 1;
+    int ret;
 
     if (argc < 2) {
         printf("Please provide a movie file\n");
@@ -138,14 +155,14 @@ int main(int argc, char *argv[])
             args.outfile = argv[optind + 1];
         } else if (argv[optind + 1] == NULL
                    && act[id].ishaveoutput == HAVEOUTPUT) {
-            args.outfile = DEFAULTOUTPUTFILE;
+            args.outfile = act[id].defaultoutput;
         } else if (argv[optind + 1] != NULL
                    && act[id].ishaveoutput == NOOUTPUT) {
             printf("Invalid arguments format\n");
             return -4;
         }
 
-        if (id == ACIDPLAY && args.framenum >= 0) {
+        if ((ret = check_args_format(id, &args)) < 0) {
             printf("Invalid arguments format\n");
             return -5;
         }

@@ -2,15 +2,11 @@
 
 #define USELIBAVFORMAT 0
 
-#define TEST_H264  1
-#define TEST_HEVC  0
-
-int yuv420p2video(cmdArgsPtr args)
-{
 #if USELIBAVFORMAT
 
 #else
-
+int video_encode(cmdArgsPtr args, int codec_id, const char *outfile)
+{
     AVCodec *pCodec;
     AVCodecContext *pCodecCtx = NULL;
     int i, ret, got_output;
@@ -21,18 +17,9 @@ int yuv420p2video(cmdArgsPtr args)
     int y_size;
     int framecnt = 0;
     long framenum;
-    char outfile[128] = { 0 };
-
-#if TEST_HEVC
-    enum AVCodecID codec_id = AV_CODEC_ID_HEVC;
-    sprintf(outfile, "%s.hevc", args->outfile);
-#else
-    enum AVCodecID codec_id = AV_CODEC_ID_H264;
-    sprintf(outfile, "%s.h264", args->outfile);
-#endif
+    uint8_t endcode[] = { 0, 0, 1, 0xb7 };
 
     avcodec_register_all();
-
     pCodec = avcodec_find_encoder(codec_id);
     if (!pCodec) {
         printf("Codec not found\n");
@@ -141,6 +128,8 @@ int yuv420p2video(cmdArgsPtr args)
         }
     }
 
+    fwrite(endcode, 1, sizeof(endcode), fp_out);
+
     fclose(fp_in);
     fclose(fp_out);
     avcodec_close(pCodecCtx);
@@ -149,8 +138,41 @@ int yuv420p2video(cmdArgsPtr args)
     av_frame_free(&pFrame);
 
     return 0;
-
+}
 #endif
 
+int yuv420p2video(cmdArgsPtr args)
+{
+    char outfilename[128] = { 0 };
+    char ext[10] = { 0 };
+    int i, len = strlen(args->outfile);
+    enum AVCodecID codec_id;
 
+    for (i = len - 1; i >= 0; i--) {
+        if ('.' == args->outfile[i]) {
+            memcpy(ext, args->outfile + i + 1, len - i - 1);
+            if (!strcmp(ext, "h264") || !strcmp(ext, "hevc")
+                || !strcmp(ext, "mpg") || !strcmp(ext, "h265")) {
+                strcpy(outfilename, args->outfile);
+            } else {
+                sprintf(outfilename, "%s.h264", args->outfile);
+                strcpy(ext, "h264");
+            }
+            break;
+        }
+    }
+    if (i < 0) {
+        sprintf(outfilename, "%s.h264", args->outfile);
+        strcpy(ext, "h264");
+    }
+
+    if (!strcmp(ext, "h265") || !strcmp(ext, "hevc")) {
+        codec_id = AV_CODEC_ID_HEVC;
+    } else if (!strcmp(ext, "h264")) {
+        codec_id = AV_CODEC_ID_H264;
+    } else if (!strcmp(ext, "mpg")) {
+        codec_id = AV_CODEC_ID_MPEG1VIDEO;
+    }
+
+    video_encode(args, codec_id, outfilename);
 }

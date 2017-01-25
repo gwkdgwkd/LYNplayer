@@ -16,15 +16,15 @@ extern int yuv420p2video(cmdArgsPtr args);
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
     {ACIDPLAYYUV420P, "playyuv420p", NOOUTPUT, NULL, play_yuv420p},
-    {ACIDVIDEO2RGB24FILES, "video2rgb24files", HAVEOUTPUT, "frame",
+    {ACIDVIDEO2RGB24FILES, "video2rgb24files", HAVEOUTPUT, "rgb24",
      video2rgbfiles},
-    {ACIDVIDEO2YUV422PFILES, "video2yuv422pfiles", HAVEOUTPUT, "frame",
+    {ACIDVIDEO2YUV422PFILES, "video2yuv422pfiles", HAVEOUTPUT, "yuv422p",
      video2yuv422pfiles},
-    {ACIDVIDEO2YUV422PFILE, "video2yuv422pfile", HAVEOUTPUT, "frame",
+    {ACIDVIDEO2YUV422PFILE, "video2yuv422pfile", HAVEOUTPUT, "yuv422p",
      video2yuv422pfile},
-    {ACIDVIDEO2YUV420PFILES, "video2yuv420pfiles", HAVEOUTPUT, "frame",
+    {ACIDVIDEO2YUV420PFILES, "video2yuv420pfiles", HAVEOUTPUT, "yuv420p",
      video2yuv420pfiles},
-    {ACIDVIDEO2YUV420PFILE, "video2yuv420pfile", HAVEOUTPUT, "frame",
+    {ACIDVIDEO2YUV420PFILE, "video2yuv420pfile", HAVEOUTPUT, "yuv420p",
      video2yuv420pfile},
     {ACIDYUV420P2VIDEO, "yuv420p2video", HAVEOUTPUT, "video",
      yuv420p2video},
@@ -38,24 +38,54 @@ static int find_action(const char *actname)
             return i;
         }
     }
-    return -1;
+    return -2;
 }
 
-static void adjust_id(const char *filename, int *actid)
+static int guess_id(const char *infile, const char *outfile, int *actid)
 {
     int i;
-    char ext[10] = { 0 };
-    int len = strlen(filename);
+    char inext[10] = { 0 };
+    char outext[10] = { 0 };
+    int inlen = (infile == NULL ? 0 : strlen(infile));
+    int outlen = (outfile == NULL ? 0 : strlen(outfile));
 
-    for (i = len - 1; i >= 0; i--) {
-        if ('.' == filename[i]) {
-            memcpy(ext, filename + i + 1, len - i - 1);
+    if (inlen == 0) {
+        return -1;
+    }
+    for (i = inlen - 1; i >= 0; i--) {
+        if ('.' == infile[i]) {
+            memcpy(inext, infile + i + 1, inlen - i - 1);
             break;
         }
     }
-    if (!strcmp(ext, "yuv")) {
-        *actid = ACIDPLAYYUV420P;
+
+    if (outlen > 0) {
+        for (i = outlen - 1; i >= 0; i--) {
+            if ('.' == outfile[i]) {
+                memcpy(outext, outfile + i + 1, outlen - i - 1);
+                break;
+            }
+        }
     }
+
+    if (strcmp(inext, "yuv") && 0 == outlen) {
+        *actid = ACIDPLAY;
+    } else if (!strcmp(inext, "yuv") && 0 == outlen) {
+        *actid = ACIDPLAYYUV420P;
+    } else if (!strcmp(outext, "yuv")) {
+        *actid = ACIDVIDEO2YUV420PFILE;
+    } else if (!strcmp(outext, "ppm")) {
+        *actid = ACIDVIDEO2RGB24FILES;
+    } else if ((!strcmp(outext, "h264") || !strcmp(outext, "h265")
+                || !strcmp(outext, "hevc") || !strcmp(outext, "mpg"))
+               && !strcmp(inext, "yuv")) {
+        *actid = ACIDYUV420P2VIDEO;
+    } else {
+        return -1;
+    }
+
+    printf("based on the input and output determine the id,%d\n", *actid);
+    return 0;
 }
 
 static void set_default_arg(cmdArgsPtr args, int actid)
@@ -69,12 +99,6 @@ static void set_default_arg(cmdArgsPtr args, int actid)
         args->framenum = DEFAULTFRAMENUM;
     }
 
-    if (actid == ACIDPLAYYUV420P && args->width < 0) {
-        args->width = DEFAULTWIDTH;
-    }
-    if (actid == ACIDPLAYYUV420P && args->height < 0) {
-        args->height = DEFAULTHEIGHT;
-    }
     if ((actid == ACIDPLAYYUV420P || actid == ACIDYUV420P2VIDEO)
         && args->framerate < 0) {
         args->framerate = DEFAULTFRAMERATE;
@@ -93,9 +117,22 @@ static void init_args(cmdArgsPtr args)
 
 static int check_args_format(int id, cmdArgsPtr args)
 {
-    if ((id == ACIDPLAY && args->framenum >= 0) ||
-        (id == ACIDYUV420P2VIDEO && args->width < 0) ||
-        (id == ACIDYUV420P2VIDEO && args->height < 0)) {
+    if (id == ACIDPLAY
+        && (args->framenum >= 0 || args->width >= 0 || args->height >= 0
+            || args->framerate >= 0)) {
+        return -1;
+    }
+    if ((id == ACIDPLAYYUV420P)
+        && (args->width < 0 || args->height < 0 || args->framenum >= 0
+            || args->framerate < 0)) {
+        return -1;
+    }
+    if ((id == ACIDVIDEO2RGB24FILES ||
+         id == ACIDVIDEO2YUV422PFILES ||
+         id == ACIDVIDEO2YUV422PFILE ||
+         id == ACIDVIDEO2YUV420PFILES ||
+         id == ACIDVIDEO2YUV420PFILE || id == ACIDYUV420P2VIDEO)
+        && (args->width < 0 || args->height < 0)) {
         return -1;
     }
     return 0;
@@ -105,14 +142,8 @@ int main(int argc, char *argv[])
 {
     int ch;
     cmdArgs args;
-    int id = ACIDPLAY;
-    int needadjust = 1;
+    int id = -1;
     int ret;
-
-    if (argc < 2) {
-        printf("Please provide a movie file\n");
-        return (-1);
-    }
 
     init_args(&args);
 
@@ -121,7 +152,6 @@ int main(int argc, char *argv[])
         switch (ch) {
         case 't':
             id = find_action(optarg);
-            needadjust = 0;
             break;
         case 'n':
             args.framenum = atoi(optarg);
@@ -140,40 +170,31 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (id < 0) {
+    args.infile = argv[optind];
+    args.outfile = argv[optind + 1];
+
+    if (id == -2) {
         printf("no matching parameters of -t\n");
         return -2;
+    } else if (id == -1) {
+        if ((ret = guess_id(args.infile, args.outfile, &id)) < 0) {
+            printf("can't guess id,please provide a movie file\n");
+            return -2;
+        }
+    } else {
+        if (args.outfile == NULL && act[id].ishaveoutput == HAVEOUTPUT) {
+            args.outfile = act[id].defaultoutput;
+        }
     }
 
-    if (argv[optind] != NULL) {
-        args.infile = argv[optind];
-        if ((ACIDPLAY == id) && needadjust) {
-            adjust_id(args.infile, &id);
-        }
+    set_default_arg(&args, id);
 
-        if (argv[optind + 1] != NULL && act[id].ishaveoutput == HAVEOUTPUT) {
-            args.outfile = argv[optind + 1];
-        } else if (argv[optind + 1] == NULL
-                   && act[id].ishaveoutput == HAVEOUTPUT) {
-            args.outfile = act[id].defaultoutput;
-        } else if (argv[optind + 1] != NULL
-                   && act[id].ishaveoutput == NOOUTPUT) {
-            printf("Invalid arguments format\n");
-            return -4;
-        }
-
-        if ((ret = check_args_format(id, &args)) < 0) {
-            printf("Invalid arguments format\n");
-            return -5;
-        }
-
-        set_default_arg(&args, id);
-
-        act[id].fun(&args);
-    } else {
-        printf("no input file!\n");
+    if ((ret = check_args_format(id, &args)) < 0) {
+        printf("Invalid arguments format\n");
         return -3;
     }
+
+    act[id].fun(&args);
 
     return 0;
 }

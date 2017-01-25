@@ -5,35 +5,59 @@
 void save_frame(AVFrame * pFrame, int width, int height, int iFrame,
                 enum AVPixelFormat format, const char *outfile)
 {
-    FILE *pFile;
-    char szFilename[32];
+    FILE *fp;
+    char outfilename[128] = { 0 };
     int y;
+    char head[128] = { 0 };
+    char ext[10] = { 0 };
+    int i, len = strlen(outfile);
 
+    for (i = len - 1; i >= 0; i--) {
+        if ('.' == outfile[i]) {
+            memcpy(ext, outfile + i + 1, len - i - 1);
+            if (!strcmp(ext, "yuv") || !strcmp(ext, "ppm")) {
+                memcpy(head, outfile, i);
+            } else {
+                memcpy(ext, (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv",
+                       3);
+                memcpy(head, outfile, len);
+            }
+            break;
+        }
+    }
+    if (i < 0) {
+        memcpy(ext, (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv", 3);
+        memcpy(head, outfile, len);
+    }
     // Open file
-    sprintf(szFilename, "%s%d.%s", outfile, iFrame,
-            (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv");
-    pFile = fopen(szFilename, "ab");
-    if (pFile == NULL)
+    if (0 == iFrame) {
+        sprintf(outfilename, "%s.%s", head, ext);
+    } else {
+        sprintf(outfilename, "%s%d.%s", head, iFrame, ext);
+    }
+
+    fp = fopen(outfilename, "ab");
+    if (fp == NULL)
         return;
 
     if (AV_PIX_FMT_RGB24 == format) {
         // Write header
-        fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+        fprintf(fp, "P6\n%d %d\n255\n", width, height);
 
         // Write pixel data
         for (y = 0; y < height; y++) {
             fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3,
-                   pFile);
+                   fp);
         }
     } else if (AV_PIX_FMT_YUV420P == format) {
-        fwrite(pFrame->data[0], width * height, 1, pFile);
-        fwrite(pFrame->data[1], width * height / 4, 1, pFile);
-        fwrite(pFrame->data[2], width * height / 4, 1, pFile);
+        fwrite(pFrame->data[0], width * height, 1, fp);
+        fwrite(pFrame->data[1], width * height / 4, 1, fp);
+        fwrite(pFrame->data[2], width * height / 4, 1, fp);
     } else if (AV_PIX_FMT_YUV422P == format) {
-        fwrite(pFrame->data[0], width * height, 2, pFile);
+        fwrite(pFrame->data[0], width * height, 2, fp);
     }
     // Close file
-    fclose(pFile);
+    fclose(fp);
 }
 
 int open_in_file(inFilePtr in, cmdArgsPtr args)

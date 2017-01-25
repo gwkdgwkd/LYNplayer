@@ -6,9 +6,7 @@
 #define HAVEOUTPUT 1
 #define NOOUTPUT 0
 
-#define DEFAULTFRAMENUM 5
-#define DEFAULTWIDTH 176
-#define DEFAULTHEIGHT 144
+#define DEFAULTFRAMENUM 0       //means all frame
 #define DEFAULTFRAMERATE 40
 
 typedef enum actionId {

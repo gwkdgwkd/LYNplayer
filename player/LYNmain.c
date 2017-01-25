@@ -12,6 +12,7 @@ extern int video2yuv422pfile(cmdArgsPtr args);
 extern int video2yuv420pfiles(cmdArgsPtr args);
 extern int video2yuv420pfile(cmdArgsPtr args);
 extern int yuv420p2video(cmdArgsPtr args);
+extern int yuv420p2picture(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -28,6 +29,8 @@ action act[ACIDMAXID] = {
      video2yuv420pfile},
     {ACIDYUV420P2VIDEO, "yuv420p2video", HAVEOUTPUT, "video",
      yuv420p2video},
+    {ACIDYUV420P2PICTURE, "yuv420p2picture", HAVEOUTPUT, "picture",
+     yuv420p2picture},
 };
 
 static int find_action(const char *actname)
@@ -80,6 +83,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(outext, "hevc") || !strcmp(outext, "mpg"))
                && !strcmp(inext, "yuv")) {
         *actid = ACIDYUV420P2VIDEO;
+    } else if (!strcmp(outext, "jpg")) {
+        *actid = ACIDYUV420P2PICTURE;
     } else {
         return -1;
     }
@@ -131,7 +136,8 @@ static int check_args_format(int id, cmdArgsPtr args)
          id == ACIDVIDEO2YUV422PFILES ||
          id == ACIDVIDEO2YUV422PFILE ||
          id == ACIDVIDEO2YUV420PFILES ||
-         id == ACIDVIDEO2YUV420PFILE || id == ACIDYUV420P2VIDEO)
+         id == ACIDVIDEO2YUV420PFILE || id == ACIDYUV420P2VIDEO
+         || id == ACIDYUV420P2PICTURE)
         && (args->width < 0 || args->height < 0)) {
         return -1;
     }

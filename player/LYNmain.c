@@ -83,7 +83,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(outext, "hevc") || !strcmp(outext, "mpg"))
                && !strcmp(inext, "yuv")) {
         *actid = ACIDYUV420P2VIDEO;
-    } else if (!strcmp(outext, "jpg")) {
+    } else if (!strcmp(outext, "jpg") || !strcmp(outext, "png")
+               || !strcmp(outext, "gif")) {
         *actid = ACIDYUV420P2PICTURE;
     } else {
         return -1;

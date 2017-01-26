@@ -17,27 +17,25 @@ int yuv420p2picture(cmdArgsPtr args)
 
     int ret = 0;
 
-    FILE *in_file = NULL;       //YUV source  
-    int in_w = args->width, in_h = args->height; //YUV's width and height  
-    const char *out_file = args->outfile; //Output file  
+    FILE *in_file = NULL;       //YUV source
 
     in_file = fopen(args->infile, "rb");
 
     av_register_all();
 
-    //Method 1  
-    pFormatCtx = avformat_alloc_context();
-    //Guess format  
-    fmt = av_guess_format("mjpeg", NULL, NULL);
-    pFormatCtx->oformat = fmt;
-    //Output URL  
-    if (avio_open(&pFormatCtx->pb, out_file, AVIO_FLAG_READ_WRITE) < 0) {
-        printf("Couldn't open output file.");
-        return -1;
-    }
-    //Method 2. More simple  
-    //avformat_alloc_output_context2(&pFormatCtx, NULL, NULL, out_file);  
-    //fmt = pFormatCtx->oformat;  
+    //Method 1
+    //pFormatCtx = avformat_alloc_context();
+    //Guess format
+    //fmt = av_guess_format("mjpeg", NULL, NULL);
+    //pFormatCtx->oformat = fmt;
+    //Output URL
+    //if (avio_open(&pFormatCtx->pb, args->outfile, AVIO_FLAG_READ_WRITE) < 0) {
+    //    printf("Couldn't open output file.");
+    //    return -1;
+    //}
+    //Method 2. More simple
+    avformat_alloc_output_context2(&pFormatCtx, NULL, NULL, args->outfile);
+    fmt = pFormatCtx->oformat;
 
     video_st = avformat_new_stream(pFormatCtx, 0);
     if (video_st == NULL) {
@@ -48,13 +46,13 @@ int yuv420p2picture(cmdArgsPtr args)
     pCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     pCodecCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
 
-    pCodecCtx->width = in_w;
-    pCodecCtx->height = in_h;
+    pCodecCtx->width = args->width;
+    pCodecCtx->height = args->height;
 
     pCodecCtx->time_base.num = 1;
     pCodecCtx->time_base.den = 25;
-    //Output some information  
-    av_dump_format(pFormatCtx, 0, out_file, 1);
+    //Output some information
+    av_dump_format(pFormatCtx, 0, args->outfile, 1);
 
     pCodec = avcodec_find_encoder(pCodecCtx->codec_id);
     if (!pCodec) {
@@ -76,21 +74,21 @@ int yuv420p2picture(cmdArgsPtr args)
     avpicture_fill((AVPicture *) picture, picture_buf, pCodecCtx->pix_fmt,
                    pCodecCtx->width, pCodecCtx->height);
 
-    //Write Header  
+    //Write Header
     avformat_write_header(pFormatCtx, NULL);
 
     y_size = pCodecCtx->width * pCodecCtx->height;
     av_new_packet(&pkt, y_size * 3);
-    //Read YUV  
+    //Read YUV
     if (fread(picture_buf, 1, y_size * 3 / 2, in_file) <= 0) {
         printf("Could not read input file.");
         return -1;
     }
-    picture->data[0] = picture_buf; // Y  
-    picture->data[1] = picture_buf + y_size; // U   
-    picture->data[2] = picture_buf + y_size * 5 / 4; // V  
+    picture->data[0] = picture_buf; // Y
+    picture->data[1] = picture_buf + y_size; // U
+    picture->data[2] = picture_buf + y_size * 5 / 4; // V
 
-    //Encode  
+    //Encode
     ret = avcodec_encode_video2(pCodecCtx, &pkt, picture, &got_picture);
     if (ret < 0) {
         printf("Encode Error.\n");
@@ -102,7 +100,7 @@ int yuv420p2picture(cmdArgsPtr args)
     }
 
     av_free_packet(&pkt);
-    //Write Trailer  
+    //Write Trailer
     av_write_trailer(pFormatCtx);
 
     printf("Encode Successful.\n");

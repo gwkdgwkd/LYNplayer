@@ -1,15 +1,16 @@
 #include "LYNtype.h"
 
-int yuv420p2picture(cmdArgsPtr args)
+int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
 {
     AVFormatContext *pFormatCtx;
     AVOutputFormat *fmt;
     AVStream *video_st;
     AVCodecContext *pCodecCtx;
     AVCodec *pCodec;
+    struct SwsContext *sws_ctx;
 
     uint8_t *picture_buf;
-    AVFrame *picture;
+    AVFrame *picture, *pictureTarget;
     AVPacket pkt;
     int y_size;
     int got_picture = 0;
@@ -44,7 +45,7 @@ int yuv420p2picture(cmdArgsPtr args)
     pCodecCtx = video_st->codec;
     pCodecCtx->codec_id = fmt->video_codec;
     pCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
-    pCodecCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+    pCodecCtx->pix_fmt = targetformat;
 
     pCodecCtx->width = args->width;
     pCodecCtx->height = args->height;
@@ -54,6 +55,8 @@ int yuv420p2picture(cmdArgsPtr args)
     //Output some information
     av_dump_format(pFormatCtx, 0, args->outfile, 1);
 
+    //pCodecCtx->codec_id = av_guess_codec(fmt, NULL, args->outfile,NULL,AVMEDIA_TYPE_VIDEO);
+    pCodecCtx->codec_id = ff_guess_image2_codec(args->outfile);
     pCodec = avcodec_find_encoder(pCodecCtx->codec_id);
     if (!pCodec) {
         printf("Codec not found.");
@@ -63,7 +66,13 @@ int yuv420p2picture(cmdArgsPtr args)
         printf("Could not open codec.");
         return -1;
     }
+
     picture = av_frame_alloc();
+    if (targetformat == AV_PIX_FMT_RGB24) {
+        pictureTarget = av_frame_alloc();
+    } else {
+        pictureTarget = picture;
+    }
     size =
         avpicture_get_size(pCodecCtx->pix_fmt, pCodecCtx->width,
                            pCodecCtx->height);
@@ -71,25 +80,53 @@ int yuv420p2picture(cmdArgsPtr args)
     if (!picture_buf) {
         return -1;
     }
-    avpicture_fill((AVPicture *) picture, picture_buf, pCodecCtx->pix_fmt,
-                   pCodecCtx->width, pCodecCtx->height);
-
+    avpicture_fill((AVPicture *) pictureTarget, picture_buf,
+                   pCodecCtx->pix_fmt, pCodecCtx->width,
+                   pCodecCtx->height);
+    if (targetformat == AV_PIX_FMT_RGB24) {
+        sws_ctx =
+            sws_getContext(pCodecCtx->width, pCodecCtx->height,
+                           AV_PIX_FMT_YUV420P, pCodecCtx->width,
+                           pCodecCtx->height, pCodecCtx->pix_fmt,
+                           SWS_BILINEAR, NULL, NULL, NULL);
+    }
     //Write Header
     avformat_write_header(pFormatCtx, NULL);
 
     y_size = pCodecCtx->width * pCodecCtx->height;
-    av_new_packet(&pkt, y_size * 3);
+
     //Read YUV
-    if (fread(picture_buf, 1, y_size * 3 / 2, in_file) <= 0) {
+    char *buf = (uint8_t *) malloc(y_size * 3 / 2 + 1);
+    if (fread(buf, 1, y_size * 3 / 2, in_file) <= 0) {
         printf("Could not read input file.");
         return -1;
     }
-    picture->data[0] = picture_buf; // Y
-    picture->data[1] = picture_buf + y_size; // U
-    picture->data[2] = picture_buf + y_size * 5 / 4; // V
+    picture->data[0] = buf;     // Y
+    picture->data[1] = buf + y_size; // U
+    picture->data[2] = buf + y_size * 5 / 4; // V
 
+    if (targetformat == AV_PIX_FMT_RGB24) {
+        picture->linesize[0] = pCodecCtx->width;
+        picture->linesize[1] = pCodecCtx->width / 2;
+        picture->linesize[2] = pCodecCtx->width / 2;
+
+        sws_scale(sws_ctx,
+                  (uint8_t const *const *) picture->data,
+                  picture->linesize, 0,
+                  pCodecCtx->height,
+                  pictureTarget->data, pictureTarget->linesize);
+    }
+
+    av_new_packet(&pkt, y_size * 6);
+
+    if (targetformat == AV_PIX_FMT_RGB24) {
+        pictureTarget->width = 640;
+        pictureTarget->height = 360;
+    }
     //Encode
-    ret = avcodec_encode_video2(pCodecCtx, &pkt, picture, &got_picture);
+    ret =
+        avcodec_encode_video2(pCodecCtx, &pkt, pictureTarget,
+                              &got_picture);
     if (ret < 0) {
         printf("Encode Error.\n");
         return -1;
@@ -109,6 +146,7 @@ int yuv420p2picture(cmdArgsPtr args)
         avcodec_close(video_st->codec);
         av_free(picture);
         av_free(picture_buf);
+        av_free(buf);
     }
     avio_close(pFormatCtx->pb);
     avformat_free_context(pFormatCtx);
@@ -116,4 +154,16 @@ int yuv420p2picture(cmdArgsPtr args)
     fclose(in_file);
 
     return 0;
+}
+
+int yuv420p2picture(cmdArgsPtr args)
+{
+    const char *ext;
+
+    ext = strrchr(args->outfile, '.');
+    if (!strcmp(ext + 1, "png")) {
+        do_encode(args, AV_PIX_FMT_RGB24);
+    } else if (!strcmp(ext + 1, "jpg")) {
+        do_encode(args, AV_PIX_FMT_YUVJ420P);
+    }
 }

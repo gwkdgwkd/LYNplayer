@@ -52,11 +52,18 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
 
     pCodecCtx->time_base.num = 1;
     pCodecCtx->time_base.den = 25;
+    if (targetformat == AV_PIX_FMT_RGB8) {
+        pFormatCtx->flags = AVFMT_FLAG_AUTO_BSF | AVFMT_FLAG_FLUSH_PACKETS;
+        avio_open(&pFormatCtx->pb, args->outfile, "w");
+    }
     //Output some information
     av_dump_format(pFormatCtx, 0, args->outfile, 1);
 
-    //pCodecCtx->codec_id = av_guess_codec(fmt, NULL, args->outfile,NULL,AVMEDIA_TYPE_VIDEO);
-    pCodecCtx->codec_id = ff_guess_image2_codec(args->outfile);
+    if (targetformat == AV_PIX_FMT_RGB24) {
+        //pCodecCtx->codec_id = av_guess_codec(fmt, NULL, args->outfile,NULL,AVMEDIA_TYPE_VIDEO);
+        pCodecCtx->codec_id = ff_guess_image2_codec(args->outfile);
+    }
+
     pCodec = avcodec_find_encoder(pCodecCtx->codec_id);
     if (!pCodec) {
         printf("Codec not found.");
@@ -68,7 +75,8 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
     }
 
     picture = av_frame_alloc();
-    if (targetformat == AV_PIX_FMT_RGB24) {
+    if (targetformat != AV_PIX_FMT_YUVJ420P) {
+
         pictureTarget = av_frame_alloc();
     } else {
         pictureTarget = picture;
@@ -80,15 +88,20 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
     if (!picture_buf) {
         return -1;
     }
+
     avpicture_fill((AVPicture *) pictureTarget, picture_buf,
                    pCodecCtx->pix_fmt, pCodecCtx->width,
                    pCodecCtx->height);
-    if (targetformat == AV_PIX_FMT_RGB24) {
+    if (targetformat != AV_PIX_FMT_YUVJ420P) {
         sws_ctx =
             sws_getContext(pCodecCtx->width, pCodecCtx->height,
                            AV_PIX_FMT_YUV420P, pCodecCtx->width,
                            pCodecCtx->height, pCodecCtx->pix_fmt,
                            SWS_BILINEAR, NULL, NULL, NULL);
+        if (sws_ctx == NULL) {
+            printf("sws_getContext failed!\n");
+            return -1;
+        }
     }
     //Write Header
     avformat_write_header(pFormatCtx, NULL);
@@ -105,7 +118,7 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
     picture->data[1] = buf + y_size; // U
     picture->data[2] = buf + y_size * 5 / 4; // V
 
-    if (targetformat == AV_PIX_FMT_RGB24) {
+    if (targetformat != AV_PIX_FMT_YUVJ420P) {
         picture->linesize[0] = pCodecCtx->width;
         picture->linesize[1] = pCodecCtx->width / 2;
         picture->linesize[2] = pCodecCtx->width / 2;
@@ -119,9 +132,12 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
 
     av_new_packet(&pkt, y_size * 6);
 
-    if (targetformat == AV_PIX_FMT_RGB24) {
-        pictureTarget->width = 640;
-        pictureTarget->height = 360;
+    if (targetformat != AV_PIX_FMT_YUVJ420P) {
+        pictureTarget->width = args->width;
+        pictureTarget->height = args->height;
+    }
+    if (targetformat == AV_PIX_FMT_RGB8) {
+        pictureTarget->format = AV_PIX_FMT_RGB8;
     }
     //Encode
     ret =
@@ -165,5 +181,7 @@ int yuv420p2picture(cmdArgsPtr args)
         do_encode(args, AV_PIX_FMT_RGB24);
     } else if (!strcmp(ext + 1, "jpg")) {
         do_encode(args, AV_PIX_FMT_YUVJ420P);
+    } else if (!strcmp(ext + 1, "gif")) {
+        do_encode(args, AV_PIX_FMT_RGB8);
     }
 }

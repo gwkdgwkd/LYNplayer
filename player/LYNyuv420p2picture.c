@@ -15,12 +15,26 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
     int y_size;
     int got_picture = 0;
     int size;
-
-    int ret = 0;
+    int framenum, framecnt = 0;
+    int i, ret = 0;
 
     FILE *in_file = NULL;       //YUV source
-
     in_file = fopen(args->infile, "rb");
+    if (!in_file) {
+        printf("Could not open %s\n", args->infile);
+        return -1;
+    }
+
+    if (args->framenum == 0 && targetformat == AV_PIX_FMT_RGB8) {
+        fseek(in_file, 0L, SEEK_END);
+        framenum = ftell(in_file) / ((args->width * args->height) * 3 / 2);
+        fseek(in_file, 0L, SEEK_SET);
+    } else if (args->framenum == 0 || targetformat != AV_PIX_FMT_RGB8) {
+        printf("png and jpg just encode first yuv picture!\n");
+        framenum = 1;
+    } else {
+        framenum = args->framenum;
+    }
 
     av_register_all();
 
@@ -63,7 +77,6 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
         //pCodecCtx->codec_id = av_guess_codec(fmt, NULL, args->outfile,NULL,AVMEDIA_TYPE_VIDEO);
         pCodecCtx->codec_id = ff_guess_image2_codec(args->outfile);
     }
-
     pCodec = avcodec_find_encoder(pCodecCtx->codec_id);
     if (!pCodec) {
         printf("Codec not found.");
@@ -76,7 +89,6 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
 
     picture = av_frame_alloc();
     if (targetformat != AV_PIX_FMT_YUVJ420P) {
-
         pictureTarget = av_frame_alloc();
     } else {
         pictureTarget = picture;
@@ -107,30 +119,7 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
     avformat_write_header(pFormatCtx, NULL);
 
     y_size = pCodecCtx->width * pCodecCtx->height;
-
-    //Read YUV
     char *buf = (uint8_t *) malloc(y_size * 3 / 2 + 1);
-    if (fread(buf, 1, y_size * 3 / 2, in_file) <= 0) {
-        printf("Could not read input file.");
-        return -1;
-    }
-    picture->data[0] = buf;     // Y
-    picture->data[1] = buf + y_size; // U
-    picture->data[2] = buf + y_size * 5 / 4; // V
-
-    if (targetformat != AV_PIX_FMT_YUVJ420P) {
-        picture->linesize[0] = pCodecCtx->width;
-        picture->linesize[1] = pCodecCtx->width / 2;
-        picture->linesize[2] = pCodecCtx->width / 2;
-
-        sws_scale(sws_ctx,
-                  (uint8_t const *const *) picture->data,
-                  picture->linesize, 0,
-                  pCodecCtx->height,
-                  pictureTarget->data, pictureTarget->linesize);
-    }
-
-    av_new_packet(&pkt, y_size * 6);
 
     if (targetformat != AV_PIX_FMT_YUVJ420P) {
         pictureTarget->width = args->width;
@@ -140,19 +129,51 @@ int do_encode(cmdArgsPtr args, enum AVPixelFormat targetformat)
         pictureTarget->format = AV_PIX_FMT_RGB8;
     }
     //Encode
-    ret =
-        avcodec_encode_video2(pCodecCtx, &pkt, pictureTarget,
-                              &got_picture);
-    if (ret < 0) {
-        printf("Encode Error.\n");
-        return -1;
-    }
-    if (got_picture == 1) {
-        pkt.stream_index = video_st->index;
-        ret = av_write_frame(pFormatCtx, &pkt);
+    for (i = 0; i < framenum; i++) {
+        av_init_packet(&pkt);
+        pkt.data = NULL;        // packet data will be allocated by the encoder
+        pkt.size = 0;
+        //Read raw YUV data
+        if (fread(buf, 1, y_size * 3 / 2, in_file) <= 0) {
+            printf("Could not read input file.");
+            return -1;
+        }
+        picture->data[0] = buf; // Y
+        picture->data[1] = buf + y_size; // U
+        picture->data[2] = buf + y_size * 5 / 4; // V
+
+        if (targetformat != AV_PIX_FMT_YUVJ420P) {
+            picture->linesize[0] = pCodecCtx->width;
+            picture->linesize[1] = pCodecCtx->width / 2;
+            picture->linesize[2] = pCodecCtx->width / 2;
+
+            sws_scale(sws_ctx,
+                      (uint8_t const *const *) picture->data,
+                      picture->linesize, 0,
+                      pCodecCtx->height,
+                      pictureTarget->data, pictureTarget->linesize);
+        }
+
+        pictureTarget->pts = i;
+        /* encode the image */
+        ret =
+            avcodec_encode_video2(pCodecCtx, &pkt, pictureTarget,
+                                  &got_picture);
+        if (ret < 0) {
+            printf("Error encoding frame\n");
+            return -1;
+        }
+
+        if (got_picture) {
+            printf("Succeed to encode frame: %5d\tsize:%5d\n", framecnt,
+                   pkt.size);
+            framecnt++;
+            pkt.stream_index = video_st->index;
+            ret = av_write_frame(pFormatCtx, &pkt);
+            av_free_packet(&pkt);
+        }
     }
 
-    av_free_packet(&pkt);
     //Write Trailer
     av_write_trailer(pFormatCtx);
 

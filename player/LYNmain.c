@@ -100,7 +100,7 @@ static void set_default_arg(cmdArgsPtr args, int actid)
          actid == ACIDVIDEO2YUV422PFILES ||
          actid == ACIDVIDEO2YUV422PFILE ||
          actid == ACIDVIDEO2YUV420PFILES || actid == ACIDVIDEO2YUV420PFILE
-         || actid == ACIDYUV420P2VIDEO)
+         || actid == ACIDYUV420P2VIDEO || actid == ACIDYUV420P2PICTURE)
         && args->framenum < 0) {
         args->framenum = DEFAULTFRAMENUM;
     }
@@ -133,6 +133,10 @@ static int check_args_format(int id, cmdArgsPtr args)
             || args->framerate < 0)) {
         return -1;
     }
+    if ((id == ACIDYUV420P2PICTURE)
+        && (args->framerate >= 0)) {
+        return -1;
+    }
     if ((id == ACIDVIDEO2RGB24FILES ||
          id == ACIDVIDEO2YUV422PFILES ||
          id == ACIDVIDEO2YUV422PFILE ||
@@ -142,6 +146,7 @@ static int check_args_format(int id, cmdArgsPtr args)
         && (args->width < 0 || args->height < 0)) {
         return -1;
     }
+
     return 0;
 }
 

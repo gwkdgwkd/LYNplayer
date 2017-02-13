@@ -227,6 +227,7 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
         av_free(frame_buf);
     }
     avio_close(pFormatCtx->pb);
+    swr_free(&swr_ctx);
     avformat_free_context(pFormatCtx);
     fclose(in_file);
     return 0;

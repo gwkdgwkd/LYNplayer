@@ -32,7 +32,64 @@ int flush_encoder(AVFormatContext * fmt_ctx, unsigned int stream_index)
     return ret;
 }
 
-int audio_encode(cmdArgsPtr args)
+static int init_resampler(int src_ch_layout,
+                          enum AVSampleFormat src_sample_fmt, int src_rate,
+                          int dst_ch_layout,
+                          enum AVSampleFormat dst_sample_fmt, int dst_rate,
+                          struct swrContext **resample_context)
+{
+    int ret;
+#if 0
+        /**
+         * Create a resampler context for the conversion.
+         * Set the conversion parameters.
+         * Default channel layouts based on the number of channels
+         * are assumed for simplicity (they are sometimes not detected
+         * properly by the demuxer and/or decoder).
+         */
+    *resample_context = swr_alloc_set_opts(NULL,
+                                           src_ch_layout,
+                                           src_sample_fmt,
+                                           src_rate,
+                                           dst_ch_layout,
+                                           dst_sample_fmt,
+                                           dst_rate, 0, NULL);
+#else
+    /* create resampler context */
+    *resample_context = swr_alloc();
+    if (!*resample_context) {
+        fprintf(stderr, "Could not allocate resampler context\n");
+        return -1;
+    }
+
+    /* set options */
+    av_opt_set_int(*resample_context, "in_channel_layout", src_ch_layout,
+                   0);
+    av_opt_set_int(*resample_context, "in_sample_rate", src_rate, 0);
+    av_opt_set_sample_fmt(*resample_context, "in_sample_fmt",
+                          src_sample_fmt, 0);
+
+    av_opt_set_int(*resample_context, "out_channel_layout", dst_ch_layout,
+                   0);
+    av_opt_set_int(*resample_context, "out_sample_rate", dst_rate, 0);
+    av_opt_set_sample_fmt(*resample_context, "out_sample_fmt",
+                          dst_sample_fmt, 0);
+#endif
+    if (!*resample_context) {
+        fprintf(stderr, "Could not allocate resample context\n");
+        return -1;
+    }
+
+        /** Open the resampler with the specified parameters. */
+    if ((ret = swr_init(*resample_context)) < 0) {
+        fprintf(stderr, "Could not open resample context\n");
+        swr_free(resample_context);
+        return ret;
+    }
+    return 0;
+}
+
+int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
 {
     AVFormatContext *pFormatCtx;
     AVOutputFormat *fmt;
@@ -41,8 +98,9 @@ int audio_encode(cmdArgsPtr args)
     AVCodec *pCodec;
 
     uint8_t *frame_buf;
-    AVFrame *pFrame;
+    AVFrame *pFrame, *audioTarget;
     AVPacket pkt;
+    struct SwrContext *swr_ctx = NULL;
 
     int got_frame = 0;
     int ret = 0;
@@ -61,14 +119,10 @@ int audio_encode(cmdArgsPtr args)
     fmt = av_guess_format(NULL, args->outfile, NULL);
     pFormatCtx->oformat = fmt;
 
-
     //Method 2.
     //avformat_alloc_output_context2(&pFormatCtx, NULL, NULL, args->outfile);
     //fmt = pFormatCtx->oformat;
 
-
-    printf("AV_CODEC_ID_AAC %d\n", AV_CODEC_ID_AAC);
-    printf("fmt->audio_codec %d\n", fmt->audio_codec);
     //Open output URL
     if (avio_open(&pFormatCtx->pb, args->outfile, AVIO_FLAG_READ_WRITE) <
         0) {
@@ -82,16 +136,15 @@ int audio_encode(cmdArgsPtr args)
     pCodecCtx = audio_st->codec;
     pCodecCtx->codec_id = fmt->audio_codec;
     pCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
-    pCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
-    //pCodecCtx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+    pCodecCtx->sample_fmt = targetformat;
     pCodecCtx->sample_rate = 44100;
     pCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
     pCodecCtx->channels =
         av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
-    pCodecCtx->bit_rate = 64000;
+    //pCodecCtx->bit_rate = 64000;
     //Show some information
     av_dump_format(pFormatCtx, 0, args->outfile, 1);
-    printf("=============%d\n", pCodecCtx->codec_id);
+
     pCodec = avcodec_find_encoder(pCodecCtx->codec_id);
     if (!pCodec) {
         printf("Can not find encoder!\n");
@@ -101,15 +154,25 @@ int audio_encode(cmdArgsPtr args)
         printf("Failed to open encoder!\n");
         return -1;
     }
+
+    /** Initialize the resampler to be able to convert audio sample formats. */
+    if (init_resampler(AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, 44100,
+                       pCodecCtx->channel_layout, pCodecCtx->sample_fmt,
+                       pCodecCtx->sample_rate, &swr_ctx)) {
+        printf("Failed to init resampler!\n");
+        return -1;
+    }
+
     pFrame = av_frame_alloc();
-    pFrame->nb_samples = pCodecCtx->frame_size;
-    pFrame->format = pCodecCtx->sample_fmt;
+    audioTarget = av_frame_alloc();
+    audioTarget->nb_samples = pCodecCtx->frame_size;
+    audioTarget->format = pCodecCtx->sample_fmt;
     size =
         av_samples_get_buffer_size(NULL, pCodecCtx->channels,
                                    pCodecCtx->frame_size,
                                    pCodecCtx->sample_fmt, 1);
     frame_buf = (uint8_t *) av_malloc(size);
-    avcodec_fill_audio_frame(pFrame, pCodecCtx->channels,
+    avcodec_fill_audio_frame(audioTarget, pCodecCtx->channels,
                              pCodecCtx->sample_fmt,
                              (const uint8_t *) frame_buf, size, 1);
     //Write Header
@@ -125,9 +188,18 @@ int audio_encode(cmdArgsPtr args)
         }
         pFrame->data[0] = frame_buf; //PCM Data
         pFrame->pts = i * 100;
+        ret =
+            swr_convert(swr_ctx, audioTarget->data, 1024,
+                        (const uint8_t **) pFrame->data, 1024);
+        if (ret < 0) {
+            fprintf(stderr, "Error while converting\n");
+            return ret;
+        }
         got_frame = 0;
         //Encode
-        ret = avcodec_encode_audio2(pCodecCtx, &pkt, pFrame, &got_frame);
+        ret =
+            avcodec_encode_audio2(pCodecCtx, &pkt, audioTarget,
+                                  &got_frame);
         if (ret < 0) {
             printf("Failed to encode!\n");
             return -1;
@@ -151,6 +223,7 @@ int audio_encode(cmdArgsPtr args)
     if (audio_st) {
         avcodec_close(audio_st->codec);
         av_free(pFrame);
+        av_free(audioTarget);
         av_free(frame_buf);
     }
     avio_close(pFormatCtx->pb);
@@ -161,5 +234,5 @@ int audio_encode(cmdArgsPtr args)
 
 int pcm2audio(cmdArgsPtr args)
 {
-    audio_encode(args);
+    audio_encode(args, AV_SAMPLE_FMT_FLTP);
 }

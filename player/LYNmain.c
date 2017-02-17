@@ -14,6 +14,7 @@ extern int video2yuv420pfile(cmdArgsPtr args);
 extern int yuv420p2video(cmdArgsPtr args);
 extern int yuv420p2picture(cmdArgsPtr args);
 extern int pcm2audio(cmdArgsPtr args);
+extern int audio2pcm(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -33,6 +34,7 @@ action act[ACIDMAXID] = {
     {ACIDYUV420P2PICTURE, "yuv420p2picture", HAVEOUTPUT, "picture",
      yuv420p2picture},
     {ACIDPCM2AUDIO, "pcm2audio", HAVEOUTPUT, "audio", pcm2audio},
+    {ACIDAUDIO2PCM, "audio2pcm", HAVEOUTPUT, "pcm", audio2pcm},
 };
 
 static int find_action(const char *actname)
@@ -92,6 +94,11 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                && (!strcmp(outext, "aac") || !strcmp(outext, "mp3")
                    || !strcmp(outext, "mp2"))) {
         *actid = ACIDPCM2AUDIO;
+    } else
+        if ((!strcmp(inext, "mp2") || !strcmp(inext, "mp3")
+             || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
+             || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
+        *actid = ACIDAUDIO2PCM;
     } else {
         return -1;
     }

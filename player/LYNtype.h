@@ -20,6 +20,7 @@ typedef enum actionId {
     ACIDYUV420P2VIDEO,
     ACIDYUV420P2PICTURE,
     ACIDPCM2AUDIO,
+    ACIDAUDIO2PCM,
     ACIDMAXID
 } actionId;
 

@@ -94,10 +94,9 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                && (!strcmp(outext, "aac") || !strcmp(outext, "mp3")
                    || !strcmp(outext, "mp2"))) {
         *actid = ACIDPCM2AUDIO;
-    } else
-        if ((!strcmp(inext, "mp2") || !strcmp(inext, "mp3")
-             || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
-             || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
+    } else if ((!strcmp(inext, "mp2") || !strcmp(inext, "mp3")
+                || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
+                || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
         *actid = ACIDAUDIO2PCM;
     } else {
         return -1;

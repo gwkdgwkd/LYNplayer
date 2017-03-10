@@ -413,7 +413,7 @@ static int audio_decode(cmdArgsPtr args)
     AVCodec *codec;
     AVCodecContext *c = NULL;
     int len;
-    FILE *f, *outfile;
+    FILE *f, *outfile, *ac3_pcm[6] = { 0 };
     uint8_t inbuf[AUDIO_INBUF_SIZE + AV_INPUT_BUFFER_PADDING_SIZE];
     AVPacket avpkt;
     AVFrame *decoded_frame = NULL;
@@ -478,10 +478,12 @@ static int audio_decode(cmdArgsPtr args)
         exit(1);
     }
 
-    outfile = fopen(args->outfile, "wb");
-    if (!outfile) {
-        av_free(c);
-        exit(1);
+    if (codec->id != AV_CODEC_ID_AC3) {
+        outfile = fopen(args->outfile, "wb");
+        if (!outfile) {
+            av_free(c);
+            exit(1);
+        }
     }
 
     if (codec->id == AV_CODEC_ID_AAC || codec->id == AV_CODEC_ID_WMAV2) {
@@ -575,8 +577,23 @@ static int audio_decode(cmdArgsPtr args)
             if (!planar) {
                 data_size *= c->channels;
             }
+
             for (i = 0; i < decoded_frame->nb_samples; i++) {
                 for (ch = 0; ch < (planar ? c->channels : 1); ch++) {
+                    if (codec->id == AV_CODEC_ID_AC3) {
+                        if (ac3_pcm[ch] == NULL) {
+                            char pcm_name[64];
+                            sprintf(pcm_name, "%d_channel_%d_%s",
+                                    c->sample_rate, ch + 1, args->outfile);
+                            printf("%s\n", pcm_name);
+                            ac3_pcm[ch] = fopen(pcm_name, "wb");
+                            if (!ac3_pcm[ch]) {
+                                av_free(c);
+                                exit(1);
+                            }
+                        }
+                        outfile = ac3_pcm[ch];
+                    }
                     fwrite(pcm_frame->data[ch] + data_size * i, 1,
                            data_size, outfile);
                 }
@@ -615,7 +632,14 @@ static int audio_decode(cmdArgsPtr args)
         av_frame_free(&pcm_frame);
         free(pcm_buf);
     }
-    fclose(outfile);
+    if (codec->id = !AV_CODEC_ID_AC3) {
+        fclose(outfile);
+    } else {
+        int i;
+        for (i = 0; i < 6; i++) {
+            fclose(ac3_pcm[i]);
+        }
+    }
     fclose(f);
 
     if (codec->id == AV_CODEC_ID_WMAV2) {

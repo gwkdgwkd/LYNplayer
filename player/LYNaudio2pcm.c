@@ -632,7 +632,7 @@ static int audio_decode(cmdArgsPtr args)
         av_frame_free(&pcm_frame);
         free(pcm_buf);
     }
-    if (codec->id = !AV_CODEC_ID_AC3) {
+    if (codec->id != AV_CODEC_ID_AC3) {
         fclose(outfile);
     } else {
         int i;

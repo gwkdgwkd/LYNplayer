@@ -426,20 +426,32 @@ static int audio_decode(cmdArgsPtr args)
     int src_rate = 44100, dst_rate = 44100;
     int packet_size = AUDIO_INBUF_SIZE;
     int last_nb_samples = 0;
+    int codec_id;
 
-    av_register_all();
     /* register all the codecs */
-    //avcodec_register_all();
-
-    AVOutputFormat *fmt;
-    fmt = av_guess_format(NULL, args->infile, NULL);
+    avcodec_register_all();
 
     av_init_packet(&avpkt);
 
     printf("Decode audio file %s to %s\n", args->infile, args->outfile);
 
+    if (!strcmp(strrchr(args->infile, '.') + 1, "mp2")) {
+        codec_id = AV_CODEC_ID_MP2;
+    } else if (!strcmp(strrchr(args->infile, '.') + 1, "mp3")) {
+        codec_id = AV_CODEC_ID_MP3;
+    } else if (!strcmp(strrchr(args->infile, '.') + 1, "aac")) {
+        codec_id = AV_CODEC_ID_AAC;
+    } else if (!strcmp(strrchr(args->infile, '.') + 1, "wma")) {
+        codec_id = AV_CODEC_ID_WMAV2;
+    } else if (!strcmp(strrchr(args->infile, '.') + 1, "ac3")) {
+        codec_id = AV_CODEC_ID_AC3;
+    } else {
+        printf("unknown file ext name.");
+        return -1;
+    }
+
     /* find the MPEG audio decoder */
-    codec = avcodec_find_decoder(fmt->audio_codec);
+    codec = avcodec_find_decoder(codec_id);
     if (!codec) {
         fprintf(stderr, "Codec not found\n");
         exit(1);
@@ -486,7 +498,7 @@ static int audio_decode(cmdArgsPtr args)
         }
     }
 
-    if (codec->id == AV_CODEC_ID_AAC || codec->id == AV_CODEC_ID_WMAV2) {
+    if (codec->id != AV_CODEC_ID_AC3) {
         /** Initialize the resampler to be able to convert audio sample formats. */
         if (init_resampler(AV_CH_LAYOUT_STEREO, c->sample_fmt, src_rate,
                            AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16,
@@ -525,8 +537,7 @@ static int audio_decode(cmdArgsPtr args)
 
         if (got_frame) {
             int swr_len;
-            if (codec->id == AV_CODEC_ID_AAC
-                || codec->id == AV_CODEC_ID_WMAV2) {
+            if (codec->id != AV_CODEC_ID_AC3) {
                 if (!pcm_frame) {
                     if (!(pcm_frame = av_frame_alloc())) {
                         fprintf(stderr,
@@ -585,7 +596,6 @@ static int audio_decode(cmdArgsPtr args)
                             char pcm_name[64];
                             sprintf(pcm_name, "%d_channel_%d_%s",
                                     c->sample_rate, ch + 1, args->outfile);
-                            printf("%s\n", pcm_name);
                             ac3_pcm[ch] = fopen(pcm_name, "wb");
                             if (!ac3_pcm[ch]) {
                                 av_free(c);
@@ -627,7 +637,7 @@ static int audio_decode(cmdArgsPtr args)
 
     }
 
-    if (codec->id == AV_CODEC_ID_AAC || codec->id == AV_CODEC_ID_WMAV2) {
+    if (codec->id != AV_CODEC_ID_AC3) {
         swr_free(&swr_ctx);
         av_frame_free(&pcm_frame);
         free(pcm_buf);

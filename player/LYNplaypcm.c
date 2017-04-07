@@ -8,7 +8,7 @@ static Uint8 *audio_pos;
 
 void fill_audio(void *udata, Uint8 * stream, int len)
 {
-    if (audio_len == 0)        /*  Only  play  if  we  have  data  left  */
+    if (audio_len == 0)         /*  Only  play  if  we  have  data  left  */
         return;
     len = (len > audio_len ? audio_len : len); /*  Mix  as  much  data  as  possible  */
     SDL_MixAudio(stream, audio_pos, len, SDL_MIX_MAXVOLUME);
@@ -18,7 +18,7 @@ void fill_audio(void *udata, Uint8 * stream, int len)
 
 int play_pcm(cmdArgsPtr args)
 {
-    FILE * fp;
+    FILE *fp;
     int pcm_buffer_size = 192000;
     char *pcm_buffer = (char *) malloc(pcm_buffer_size);
     int data_count = 0;
@@ -49,7 +49,6 @@ int play_pcm(cmdArgsPtr args)
         printf("can't open audio.\n");
         return -1;
     }
-
     //Play
     SDL_PauseAudio(0);
     while (!feof(fp)) {
@@ -68,17 +67,17 @@ int play_pcm(cmdArgsPtr args)
         while (audio_len > 0) { //Wait until finish
             SDL_PollEvent(&event);
             switch (event.type) {
-                case SDL_QUIT:
-                    SDL_Quit();
-                    exit(0);
-                    break;
-                default:
-                    break;
+            case SDL_QUIT:
+                SDL_Quit();
+                exit(0);
+                break;
+            default:
+                break;
             }
             SDL_Delay(1);
         }
     }
-    SDL_CloseAudio();        //Close SDL
+    SDL_CloseAudio();           //Close SDL
     SDL_Quit();
     free(pcm_buffer);
 

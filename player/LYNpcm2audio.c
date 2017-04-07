@@ -107,10 +107,16 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     int size = 0;
 
     FILE *in_file = NULL;       //Raw PCM data
-    int framenum = 1000;        //Audio frame number
+    int framenum;               //Audio frame number
+    int filesize;
     int i;
 
     in_file = fopen(args->infile, "rb");
+
+    fseek(in_file, 0L, SEEK_END);
+    filesize = ftell(in_file);
+    fseek(in_file, 0L, SEEK_SET);
+    framenum = filesize / 2 / 2;
 
     av_register_all();
 
@@ -141,7 +147,7 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     pCodecCtx->channel_layout = AV_CH_LAYOUT_STEREO;
     pCodecCtx->channels =
         av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
-    //pCodecCtx->bit_rate = 64000;
+    pCodecCtx->bit_rate = 64000;
     //Show some information
     av_dump_format(pFormatCtx, 0, args->outfile, 1);
 
@@ -235,5 +241,14 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
 
 int pcm2audio(cmdArgsPtr args)
 {
-    audio_encode(args, AV_SAMPLE_FMT_FLTP);
+    const char *ext;
+
+    ext = strrchr(args->outfile, '.');
+    if (!strcmp(ext + 1, "mp2")) {
+        audio_encode(args, AV_SAMPLE_FMT_S16);
+    } else if (!strcmp(ext + 1, "mp3")) {
+        audio_encode(args, AV_SAMPLE_FMT_S16P);
+    } else if (!strcmp(ext + 1, "aac")) {
+        audio_encode(args, AV_SAMPLE_FMT_FLTP);
+    }
 }

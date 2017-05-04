@@ -97,14 +97,15 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     AVCodecContext *pCodecCtx;
     AVCodec *pCodec;
 
-    uint8_t *frame_buf;
+    uint8_t *frame_buf, *frame_buf1;
     AVFrame *pFrame, *audioTarget;
     AVPacket pkt;
-    struct SwrContext *swr_ctx = NULL;
+    struct swrContext *swr_ctx = NULL;
 
     int got_frame = 0;
     int ret = 0;
     int size = 0;
+    int framecount;
 
     FILE *in_file = NULL;       //Raw PCM data
     int framenum;               //Audio frame number
@@ -169,6 +170,7 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
         return -1;
     }
 
+    framecount = pCodecCtx->frame_size;
     pFrame = av_frame_alloc();
     audioTarget = av_frame_alloc();
     audioTarget->nb_samples = pCodecCtx->frame_size;
@@ -178,6 +180,7 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
                                    pCodecCtx->frame_size,
                                    pCodecCtx->sample_fmt, 1);
     frame_buf = (uint8_t *) av_malloc(size);
+    frame_buf1 = (uint8_t *) av_malloc(size);
     avcodec_fill_audio_frame(audioTarget, pCodecCtx->channels,
                              pCodecCtx->sample_fmt,
                              (const uint8_t *) frame_buf, size, 1);
@@ -186,22 +189,34 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     av_new_packet(&pkt, size);
     for (i = 0; i < framenum; i++) {
         //Read PCM
-        if (fread(frame_buf, 1, size, in_file) <= 0) {
+        if (fread(frame_buf1, 1, size, in_file) < 0) {
             printf("Failed to read raw data! \n");
             return -1;
         } else if (feof(in_file)) {
             break;
         }
-        pFrame->data[0] = frame_buf; //PCM Data
+        pFrame->data[0] = frame_buf1; //PCM Data
         pFrame->pts = i * 100;
         ret =
-            swr_convert(swr_ctx, audioTarget->data, 1024,
-                        (const uint8_t **) pFrame->data, 1024);
+            swr_convert(swr_ctx, audioTarget->data, framecount,
+                        (const uint8_t **) pFrame->data, framecount);
+
         if (ret < 0) {
             fprintf(stderr, "Error while converting\n");
             return ret;
         }
+        /* don't use swr_convert
+           if (feof(in_file)) {
+           break;
+           }
+           int o;
+           for(o = 0; o<size/4;o++){
+           fread(audioTarget->data[0]+o*2, 1, 2, in_file);
+           fread(audioTarget->data[1]+o*2, 1, 2, in_file);
+           }
+         */
         got_frame = 0;
+
         //Encode
         ret =
             avcodec_encode_audio2(pCodecCtx, &pkt, audioTarget,

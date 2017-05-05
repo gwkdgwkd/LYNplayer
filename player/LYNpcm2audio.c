@@ -24,7 +24,6 @@ int flush_encoder(AVFormatContext * fmt_ctx, unsigned int stream_index)
         }
         printf("Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n",
                enc_pkt.size);
-        /* mux encoded frame */
         ret = av_write_frame(fmt_ctx, &enc_pkt);
         if (ret < 0)
             break;
@@ -91,6 +90,19 @@ static int init_resampler(int src_ch_layout,
 
 int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
 {
+    ///* don't use av_write_frame,use fwrite adts and packet
+    char *padts = (char *) malloc(sizeof(char) * 7);
+    int profile = 2;            //AAC LC
+    int freqIdx = 4;            //44.1KHz
+    int chanCfg = 2;            //MPEG-4 Audio Channel Configuration. 1 Channel front-center
+    padts[0] = (char) 0xFF;     // 11111111     = syncword
+    padts[1] = (char) 0xF1;     // 1111 1 00 1  = syncword MPEG-2 Layer CRC
+    padts[2] =
+        (char) (((profile - 1) << 6) + (freqIdx << 2) + (chanCfg >> 2));
+    padts[6] = (char) 0xFC;
+    FILE *fp_out;
+    //*/
+
     AVFormatContext *pFormatCtx;
     AVOutputFormat *fmt;
     AVStream *audio_st;
@@ -130,6 +142,11 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     //avformat_alloc_output_context2(&pFormatCtx, NULL, NULL, args->outfile);
     //fmt = pFormatCtx->oformat;
 
+    /* don't use av_write_frame,use fwrite adts and packet
+       if (targetformat == AV_SAMPLE_FMT_FLTP) {
+       fp_out = fopen(args->outfile, "wb");
+       }
+     */
     //Open output URL
     if (avio_open(&pFormatCtx->pb, args->outfile, AVIO_FLAG_READ_WRITE) <
         0) {
@@ -170,10 +187,9 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
         return -1;
     }
 
-    framecount = pCodecCtx->frame_size;
     pFrame = av_frame_alloc();
     audioTarget = av_frame_alloc();
-    audioTarget->nb_samples = pCodecCtx->frame_size;
+    audioTarget->nb_samples = framecount = pCodecCtx->frame_size;
     audioTarget->format = pCodecCtx->sample_fmt;
     size =
         av_samples_get_buffer_size(NULL, pCodecCtx->channels,
@@ -189,7 +205,7 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
     av_new_packet(&pkt, size);
     for (i = 0; i < framenum; i++) {
         //Read PCM
-        if (fread(frame_buf1, 1, size, in_file) < 0) {
+        if (fread(frame_buf1, 1, framecount * 4, in_file) < 0) {
             printf("Failed to read raw data! \n");
             return -1;
         } else if (feof(in_file)) {
@@ -228,6 +244,16 @@ int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
         if (got_frame == 1) {
             printf("Succeed to encode 1 frame! \tsize:%5d\n", pkt.size);
             pkt.stream_index = audio_st->index;
+            /* don't use av_write_frame,use fwrite adts and packet
+               if (targetformat == AV_SAMPLE_FMT_FLTP) {
+               padts[3] =
+               (char) (((chanCfg & 3) << 6) + ((7 + pkt.size) >> 11));
+               padts[4] = (char) (((7 + pkt.size) & 0x7FF) >> 3);
+               padts[5] = (char) ((((7 + pkt.size) & 7) << 5) + 0x1F);
+               fwrite(padts, 7, 1, fp_out);
+               fwrite(pkt.data, 1, pkt.size, fp_out);
+               } else
+             */
             ret = av_write_frame(pFormatCtx, &pkt);
             av_free_packet(&pkt);
         }

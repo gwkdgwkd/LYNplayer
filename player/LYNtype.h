@@ -22,6 +22,7 @@ typedef enum actionId {
     ACIDPCM2AUDIO,
     ACIDAUDIO2PCM,
     ACIDPLAYPCM,
+    ACIDDEMUXER,
     ACIDMAXID
 } actionId;
 

@@ -16,6 +16,7 @@ extern int yuv420p2picture(cmdArgsPtr args);
 extern int pcm2audio(cmdArgsPtr args);
 extern int audio2pcm(cmdArgsPtr args);
 extern int play_pcm(cmdArgsPtr args);
+extern int demuxer(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -37,6 +38,7 @@ action act[ACIDMAXID] = {
     {ACIDPCM2AUDIO, "pcm2audio", HAVEOUTPUT, "audio", pcm2audio},
     {ACIDAUDIO2PCM, "audio2pcm", HAVEOUTPUT, "pcm", audio2pcm},
     {ACIDPLAYPCM, "playpcm", NOOUTPUT, NULL, play_pcm},
+    {ACIDDEMUXER, "demuxer", NOOUTPUT, NULL, demuxer},
 };
 
 static int find_action(const char *actname)
@@ -102,6 +104,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
                 || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
         *actid = ACIDAUDIO2PCM;
+    } else if (!strcmp(inext, "flv")) {
+        *actid = ACIDDEMUXER;
     } else {
         return -1;
     }

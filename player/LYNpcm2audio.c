@@ -90,18 +90,18 @@ static int init_resampler(int src_ch_layout,
 
 int audio_encode(cmdArgsPtr args, enum AVSampleFormat targetformat)
 {
-    ///* don't use av_write_frame,use fwrite adts and packet
-    char *padts = (char *) malloc(sizeof(char) * 7);
-    int profile = 2;            //AAC LC
-    int freqIdx = 4;            //44.1KHz
-    int chanCfg = 2;            //MPEG-4 Audio Channel Configuration. 1 Channel front-center
-    padts[0] = (char) 0xFF;     // 11111111     = syncword
-    padts[1] = (char) 0xF1;     // 1111 1 00 1  = syncword MPEG-2 Layer CRC
-    padts[2] =
-        (char) (((profile - 1) << 6) + (freqIdx << 2) + (chanCfg >> 2));
-    padts[6] = (char) 0xFC;
-    FILE *fp_out;
-    //*/
+    /* don't use av_write_frame,use fwrite adts and packet
+       char *padts = (char *) malloc(sizeof(char) * 7);
+       int profile = 2;            //AAC LC
+       int freqIdx = 4;            //44.1KHz
+       int chanCfg = 2;            //MPEG-4 Audio Channel Configuration. 1 Channel front-center
+       padts[0] = (char) 0xFF;     // 11111111     = syncword
+       padts[1] = (char) 0xF1;     // 1111 1 00 1  = syncword MPEG-2 Layer CRC
+       padts[2] =
+       (char) (((profile - 1) << 6) + (freqIdx << 2) + (chanCfg >> 2));
+       padts[6] = (char) 0xFC;
+       FILE *fp_out;
+     */
 
     AVFormatContext *pFormatCtx;
     AVOutputFormat *fmt;

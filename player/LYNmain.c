@@ -38,7 +38,7 @@ action act[ACIDMAXID] = {
     {ACIDPCM2AUDIO, "pcm2audio", HAVEOUTPUT, "audio", pcm2audio},
     {ACIDAUDIO2PCM, "audio2pcm", HAVEOUTPUT, "pcm", audio2pcm},
     {ACIDPLAYPCM, "playpcm", NOOUTPUT, NULL, play_pcm},
-    {ACIDDEMUXER, "demuxer", NOOUTPUT, NULL, demuxer},
+    {ACIDDEMUXER, "demuxer", HAVEOUTPUT, NULL, demuxer},
 };
 
 static int find_action(const char *actname)
@@ -104,7 +104,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
                 || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
         *actid = ACIDAUDIO2PCM;
-    } else if (!strcmp(inext, "flv")) {
+    } else if ((!strcmp(inext, "flv") || !strcmp(inext, "ts"))
+               && outlen > 0) {
         *actid = ACIDDEMUXER;
     } else {
         return -1;

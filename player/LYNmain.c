@@ -104,8 +104,11 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
                 || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
         *actid = ACIDAUDIO2PCM;
-    } else if ((!strcmp(inext, "flv") || !strcmp(inext, "ts"))
-               && outlen > 0) {
+    } else
+        if ((!strcmp(inext, "flv") || !strcmp(inext, "ts")
+             || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
+             || !strcmp(inext, "avi") || !strcmp(inext, "rmvb"))
+            && outlen > 0) {
         *actid = ACIDDEMUXER;
     } else {
         return -1;

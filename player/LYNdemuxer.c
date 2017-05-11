@@ -5,6 +5,22 @@
 #define USE_H264BSF 1
 
 #if 1
+
+char *get_extname(const char *name)
+{
+    if (!strcmp("mpeg4", name)) {
+        return "mp4";           //avi
+    } else if (!strcmp("flv1", name)) {
+        return "flv";
+    } else if (!strcmp("rv40", name)) {
+        return "rm";
+    } else if (!strcmp("cook", name)) {
+        return "ra";
+    } else {
+        return name;
+    }
+}
+
 //flv,ts works well.mp3 and aac all good
 int demuxer(cmdArgsPtr args)
 {
@@ -40,8 +56,9 @@ int demuxer(cmdArgsPtr args)
         if (ifmt_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             videoindex = i;
             sprintf(out_filename_v, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
-                                           codec->codec_id)->name);
+                    get_extname(avcodec_descriptor_get
+                                (ifmt_ctx->streams[i]->codec->codec_id)->
+                                name));
             avformat_alloc_output_context2(&ofmt_ctx_v, NULL, NULL,
                                            out_filename_v);
             if (!ofmt_ctx_v) {
@@ -57,8 +74,9 @@ int demuxer(cmdArgsPtr args)
                    AVMEDIA_TYPE_AUDIO) {
             audioindex = i;
             sprintf(out_filename_a, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
-                                           codec->codec_id)->name);
+                    get_extname(avcodec_descriptor_get
+                                (ifmt_ctx->streams[i]->codec->codec_id)->
+                                name));
             avformat_alloc_output_context2(&ofmt_ctx_a, NULL, NULL,
                                            out_filename_a);
             if (!ofmt_ctx_a) {
@@ -257,14 +275,14 @@ int demuxer(cmdArgsPtr args)
         if (ifmt_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             videoindex = i;
             sprintf(out_filename_v, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
-                                           codec->codec_id)->name);
+                    avcodec_descriptor_get(ifmt_ctx->streams[i]->codec->
+                                           codec_id)->name);
         } else if (ifmt_ctx->streams[i]->codec->codec_type ==
                    AVMEDIA_TYPE_AUDIO) {
             audioindex = i;
             sprintf(out_filename_a, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
-                                           codec->codec_id)->name);
+                    avcodec_descriptor_get(ifmt_ctx->streams[i]->codec->
+                                           codec_id)->name);
         }
     }
     //Dump Format------------------
@@ -291,10 +309,9 @@ int demuxer(cmdArgsPtr args)
         if (pkt.stream_index == videoindex) {
 #if USE_H264BSF
             av_bitstream_filter_filter(h264bsfc,
-                                       ifmt_ctx->
-                                       streams[videoindex]->codec, NULL,
-                                       &pkt.data, &pkt.size, pkt.data,
-                                       pkt.size, 0);
+                                       ifmt_ctx->streams[videoindex]->
+                                       codec, NULL, &pkt.data, &pkt.size,
+                                       pkt.data, pkt.size, 0);
 #endif
             printf("Write Video Packet. size:%d\tpts:%lld\n", pkt.size,
                    pkt.pts);

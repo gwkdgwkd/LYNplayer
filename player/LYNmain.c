@@ -17,6 +17,7 @@ extern int pcm2audio(cmdArgsPtr args);
 extern int audio2pcm(cmdArgsPtr args);
 extern int play_pcm(cmdArgsPtr args);
 extern int demuxer(cmdArgsPtr args);
+extern int muxer(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -38,7 +39,8 @@ action act[ACIDMAXID] = {
     {ACIDPCM2AUDIO, "pcm2audio", HAVEOUTPUT, "audio", pcm2audio},
     {ACIDAUDIO2PCM, "audio2pcm", HAVEOUTPUT, "pcm", audio2pcm},
     {ACIDPLAYPCM, "playpcm", NOOUTPUT, NULL, play_pcm},
-    {ACIDDEMUXER, "demuxer", HAVEOUTPUT, NULL, demuxer},
+    {ACIDDEMUXER, "demuxer", HAVEOUTPUT, "demuxer", demuxer},
+    {ACIDDEMUXER, "muxer", HAVEOUTPUT, "muxer.mp4", muxer},
 };
 
 static int find_action(const char *actname)
@@ -104,12 +106,15 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                 || !strcmp(inext, "aac") || !strcmp(inext, "ac3")
                 || !strcmp(inext, "wma")) && !strcmp(outext, "pcm")) {
         *actid = ACIDAUDIO2PCM;
-    } else
-        if ((!strcmp(inext, "flv") || !strcmp(inext, "ts")
-             || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
-             || !strcmp(inext, "avi") || !strcmp(inext, "rmvb"))
-            && outlen > 0) {
+    } else if ((!strcmp(inext, "flv") || !strcmp(inext, "ts")
+                || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
+                || !strcmp(inext, "avi") || !strcmp(inext, "rmvb"))
+               && outlen > 0) {
         *actid = ACIDDEMUXER;
+    } else if ((!strcmp(outext, "mp4") || !strcmp(outext, "flv")
+                || !strcmp(outext, "ts") || !strcmp(outext, "mkv")
+                || !strcmp(outext, "avi")) && inlen > 0) {
+        *actid = ACIDMUXER;
     } else {
         return -1;
     }

@@ -57,8 +57,8 @@ int demuxer(cmdArgsPtr args)
             videoindex = i;
             sprintf(out_filename_v, "%s.%s", args->outfile,
                     get_extname(avcodec_descriptor_get
-                                (ifmt_ctx->streams[i]->codec->codec_id)->
-                                name));
+                                (ifmt_ctx->streams[i]->codec->
+                                 codec_id)->name));
             avformat_alloc_output_context2(&ofmt_ctx_v, NULL, NULL,
                                            out_filename_v);
             if (!ofmt_ctx_v) {
@@ -75,8 +75,8 @@ int demuxer(cmdArgsPtr args)
             audioindex = i;
             sprintf(out_filename_a, "%s.%s", args->outfile,
                     get_extname(avcodec_descriptor_get
-                                (ifmt_ctx->streams[i]->codec->codec_id)->
-                                name));
+                                (ifmt_ctx->streams[i]->codec->
+                                 codec_id)->name));
             avformat_alloc_output_context2(&ofmt_ctx_a, NULL, NULL,
                                            out_filename_a);
             if (!ofmt_ctx_a) {
@@ -275,14 +275,14 @@ int demuxer(cmdArgsPtr args)
         if (ifmt_ctx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             videoindex = i;
             sprintf(out_filename_v, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->codec->
-                                           codec_id)->name);
+                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
+                                           codec->codec_id)->name);
         } else if (ifmt_ctx->streams[i]->codec->codec_type ==
                    AVMEDIA_TYPE_AUDIO) {
             audioindex = i;
             sprintf(out_filename_a, "%s.%s", args->outfile,
-                    avcodec_descriptor_get(ifmt_ctx->streams[i]->codec->
-                                           codec_id)->name);
+                    avcodec_descriptor_get(ifmt_ctx->streams[i]->
+                                           codec->codec_id)->name);
         }
     }
     //Dump Format------------------
@@ -309,9 +309,10 @@ int demuxer(cmdArgsPtr args)
         if (pkt.stream_index == videoindex) {
 #if USE_H264BSF
             av_bitstream_filter_filter(h264bsfc,
-                                       ifmt_ctx->streams[videoindex]->
-                                       codec, NULL, &pkt.data, &pkt.size,
-                                       pkt.data, pkt.size, 0);
+                                       ifmt_ctx->
+                                       streams[videoindex]->codec, NULL,
+                                       &pkt.data, &pkt.size, pkt.data,
+                                       pkt.size, 0);
 #endif
             printf("Write Video Packet. size:%d\tpts:%lld\n", pkt.size,
                    pkt.pts);

@@ -18,6 +18,7 @@ extern int audio2pcm(cmdArgsPtr args);
 extern int play_pcm(cmdArgsPtr args);
 extern int demuxer(cmdArgsPtr args);
 extern int muxer(cmdArgsPtr args);
+extern int remuxer(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -40,7 +41,8 @@ action act[ACIDMAXID] = {
     {ACIDAUDIO2PCM, "audio2pcm", HAVEOUTPUT, "pcm", audio2pcm},
     {ACIDPLAYPCM, "playpcm", NOOUTPUT, NULL, play_pcm},
     {ACIDDEMUXER, "demuxer", HAVEOUTPUT, "demuxer", demuxer},
-    {ACIDDEMUXER, "muxer", HAVEOUTPUT, "muxer.mp4", muxer},
+    {ACIDMUXER, "muxer", HAVEOUTPUT, "muxer.mp4", muxer},
+    {ACIDREMUXER, "remuxer", HAVEOUTPUT, "remuxer.mp4", remuxer},
 };
 
 static int find_action(const char *actname)
@@ -109,12 +111,27 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     } else if ((!strcmp(inext, "flv") || !strcmp(inext, "ts")
                 || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
                 || !strcmp(inext, "avi") || !strcmp(inext, "rmvb"))
-               && outlen > 0) {
+               && outlen > 0 && !(!strcmp(outext, "mp4")
+                                  || !strcmp(outext, "flv")
+                                  || !strcmp(outext, "ts")
+                                  || !strcmp(outext, "mkv")
+                                  || !strcmp(outext, "avi"))) {
         *actid = ACIDDEMUXER;
     } else if ((!strcmp(outext, "mp4") || !strcmp(outext, "flv")
                 || !strcmp(outext, "ts") || !strcmp(outext, "mkv")
-                || !strcmp(outext, "avi")) && inlen > 0) {
+                || !strcmp(outext, "avi")) && inlen > 0
+               && !(!strcmp(inext, "flv") || !strcmp(inext, "ts")
+                    || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
+                    || !strcmp(inext, "avi"))) {
         *actid = ACIDMUXER;
+    } else if ((!strcmp(outext, "mp4") || !strcmp(outext, "flv")
+                || !strcmp(outext, "ts") || !strcmp(outext, "mkv")
+                || !strcmp(outext, "avi")) && (!strcmp(inext, "flv")
+                                               || !strcmp(inext, "ts")
+                                               || !strcmp(inext, "mp4")
+                                               || !strcmp(inext, "mkv")
+                                               || !strcmp(inext, "avi"))) {
+        *actid = ACIDREMUXER;
     } else {
         return -1;
     }

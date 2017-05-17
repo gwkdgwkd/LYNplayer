@@ -18,6 +18,11 @@ SDL/libsdl1.2-1.2.15/
 SDL/libsdl2-2.0.2+dfsg1/
 SDL/sdl1.2_build/
 SDL/sdl2_build/
+nginx/master.zip
+nginx/nginx-1.7.5.tar.gz
+nginx/nginx-1.7.5/
+nginx/nginx-rtmp-module-master/
+nginx/nginx_build/
 player/LYNplayer
 player/*.o
 

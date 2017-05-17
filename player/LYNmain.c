@@ -19,6 +19,7 @@ extern int play_pcm(cmdArgsPtr args);
 extern int demuxer(cmdArgsPtr args);
 extern int muxer(cmdArgsPtr args);
 extern int remuxer(cmdArgsPtr args);
+extern int push(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -43,6 +44,7 @@ action act[ACIDMAXID] = {
     {ACIDDEMUXER, "demuxer", HAVEOUTPUT, "demuxer", demuxer},
     {ACIDMUXER, "muxer", HAVEOUTPUT, "muxer.mp4", muxer},
     {ACIDREMUXER, "remuxer", HAVEOUTPUT, "remuxer.mp4", remuxer},
+    {ACIDPUSH, "push", NOOUTPUT, NULL, push},
 };
 
 static int find_action(const char *actname)
@@ -61,6 +63,7 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     int i;
     char inext[10] = { 0 };
     char outext[10] = { 0 };
+    char outprotocol[10] = { 0 };
     int inlen = (infile == NULL ? 0 : strlen(infile));
     int outlen = (outfile == NULL ? 0 : strlen(outfile));
 
@@ -78,6 +81,9 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
         for (i = outlen - 1; i >= 0; i--) {
             if ('.' == outfile[i]) {
                 memcpy(outext, outfile + i + 1, outlen - i - 1);
+                break;
+            } else if (':' == outfile[i]) {
+                memcpy(outprotocol, outfile, i);
                 break;
             }
         }
@@ -111,18 +117,21 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     } else if ((!strcmp(inext, "flv") || !strcmp(inext, "ts")
                 || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
                 || !strcmp(inext, "avi") || !strcmp(inext, "rmvb"))
-               && outlen > 0 && !(!strcmp(outext, "mp4")
-                                  || !strcmp(outext, "flv")
-                                  || !strcmp(outext, "ts")
-                                  || !strcmp(outext, "mkv")
-                                  || !strcmp(outext, "avi"))) {
+               && outlen > 0 && strlen(outprotocol) < 0
+               && !(!strcmp(outext, "mp4")
+                    || !strcmp(outext, "flv")
+                    || !strcmp(outext, "ts")
+                    || !strcmp(outext, "mkv")
+                    || !strcmp(outext, "avi"))) {
         *actid = ACIDDEMUXER;
     } else if ((!strcmp(outext, "mp4") || !strcmp(outext, "flv")
                 || !strcmp(outext, "ts") || !strcmp(outext, "mkv")
                 || !strcmp(outext, "avi")) && inlen > 0
-               && !(!strcmp(inext, "flv") || !strcmp(inext, "ts")
-                    || !strcmp(inext, "mp4") || !strcmp(inext, "mkv")
-                    || !strcmp(inext, "avi"))) {
+               && strlen(outprotocol) < 0 && !(!strcmp(inext, "flv")
+                                               || !strcmp(inext, "ts")
+                                               || !strcmp(inext, "mp4")
+                                               || !strcmp(inext, "mkv")
+                                               || !strcmp(inext, "avi"))) {
         *actid = ACIDMUXER;
     } else if ((!strcmp(outext, "mp4") || !strcmp(outext, "flv")
                 || !strcmp(outext, "ts") || !strcmp(outext, "mkv")
@@ -132,6 +141,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                                                || !strcmp(inext, "mkv")
                                                || !strcmp(inext, "avi"))) {
         *actid = ACIDREMUXER;
+    } else if (!strcmp(outprotocol, "rtmp")) {
+        *actid = ACIDPUSH;
     } else {
         return -1;
     }

@@ -20,6 +20,7 @@ extern int demuxer(cmdArgsPtr args);
 extern int muxer(cmdArgsPtr args);
 extern int remuxer(cmdArgsPtr args);
 extern int push(cmdArgsPtr args);
+extern int receive(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -44,7 +45,8 @@ action act[ACIDMAXID] = {
     {ACIDDEMUXER, "demuxer", HAVEOUTPUT, "demuxer", demuxer},
     {ACIDMUXER, "muxer", HAVEOUTPUT, "muxer.mp4", muxer},
     {ACIDREMUXER, "remuxer", HAVEOUTPUT, "remuxer.mp4", remuxer},
-    {ACIDPUSH, "push", NOOUTPUT, NULL, push},
+    {ACIDPUSH, "push", HAVEOUTPUT, NULL, push},
+    {ACIDRECEIVE, "receive", HAVEOUTPUT, "receive.flv", receive},
 };
 
 static int find_action(const char *actname)
@@ -63,6 +65,7 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     int i;
     char inext[10] = { 0 };
     char outext[10] = { 0 };
+    char inprotocol[10] = { 0 };
     char outprotocol[10] = { 0 };
     int inlen = (infile == NULL ? 0 : strlen(infile));
     int outlen = (outfile == NULL ? 0 : strlen(outfile));
@@ -73,6 +76,9 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     for (i = inlen - 1; i >= 0; i--) {
         if ('.' == infile[i]) {
             memcpy(inext, infile + i + 1, inlen - i - 1);
+            break;
+        } else if (':' == infile[i]) {
+            memcpy(inprotocol, infile, i);
             break;
         }
     }
@@ -141,8 +147,12 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
                                                || !strcmp(inext, "mkv")
                                                || !strcmp(inext, "avi"))) {
         *actid = ACIDREMUXER;
-    } else if (!strcmp(outprotocol, "rtmp")) {
+    } else if (!strcmp(outprotocol, "rtmp") && strcmp(inprotocol, "rtmp")
+               && inlen > 0) {
         *actid = ACIDPUSH;
+    } else if (!strcmp(inprotocol, "rtmp") && strcmp(outprotocol, "rtmp")
+               && outlen > 0) {
+        *actid = ACIDRECEIVE;
     } else {
         return -1;
     }

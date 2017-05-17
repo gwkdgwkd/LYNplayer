@@ -1,22 +1,26 @@
 #include "LYNtype.h"
 
-int push(cmdArgsPtr args)
+//'1': Use H.264 Bitstream Filter
+#define USE_H264BSF 0
+
+int receive(cmdArgsPtr args)
 {
     AVOutputFormat *ofmt = NULL;
+    //Input AVFormatContext and Output AVFormatContext
     AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
     AVPacket pkt;
     const char *in_filename, *out_filename;
     int ret, i;
     int videoindex = -1;
     int frame_index = 0;
-    int64_t start_time = 0;
 
     in_filename = args->infile;
-    out_filename = args->outfile;
+    out_filename = args->outfile;;
 
     av_register_all();
     //Network
     avformat_network_init();
+    //Input
     if ((ret = avformat_open_input(&ifmt_ctx, in_filename, 0, 0)) < 0) {
         printf("Could not open input file.");
         goto end;
@@ -34,8 +38,8 @@ int push(cmdArgsPtr args)
 
     av_dump_format(ifmt_ctx, 0, in_filename, 0);
 
-    avformat_alloc_output_context2(&ofmt_ctx, NULL, "flv", out_filename); //RTMP
-    //avformat_alloc_output_context2(&ofmt_ctx, NULL, "mpegts", out_filename);//UDP
+    //Output
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename); //RTMP
 
     if (!ofmt_ctx) {
         printf("Could not create output context\n");
@@ -44,6 +48,7 @@ int push(cmdArgsPtr args)
     }
     ofmt = ofmt_ctx->oformat;
     for (i = 0; i < ifmt_ctx->nb_streams; i++) {
+        //Create output AVStream according to input AVStream
         AVStream *in_stream = ifmt_ctx->streams[i];
         AVStream *out_stream =
             avformat_new_stream(ofmt_ctx, in_stream->codec->codec);
@@ -52,6 +57,7 @@ int push(cmdArgsPtr args)
             ret = AVERROR_UNKNOWN;
             goto end;
         }
+        //Copy the settings of AVCodecContext
         ret = avcodec_copy_context(out_stream->codec, in_stream->codec);
         if (ret < 0) {
             printf
@@ -64,6 +70,7 @@ int push(cmdArgsPtr args)
     }
     //Dump Format------------------
     av_dump_format(ofmt_ctx, 0, out_filename, 1);
+    //Open output URL
     if (!(ofmt->flags & AVFMT_NOFILE)) {
         ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
         if (ret < 0) {
@@ -71,52 +78,28 @@ int push(cmdArgsPtr args)
             goto end;
         }
     }
+    //Write file header
     ret = avformat_write_header(ofmt_ctx, NULL);
     if (ret < 0) {
         printf("Error occurred when opening output URL\n");
         goto end;
     }
+#if USE_H264BSF
+    AVBitStreamFilterContext *h264bsfc =
+        av_bitstream_filter_init("h264_mp4toannexb");
+#endif
 
-    start_time = av_gettime();
     while (1) {
         AVStream *in_stream, *out_stream;
+        //Get an AVPacket
         ret = av_read_frame(ifmt_ctx, &pkt);
         if (ret < 0)
             break;
-        //Simple Write PTS
-        if (pkt.pts == AV_NOPTS_VALUE) {
-            //Write PTS
-            AVRational time_base1 =
-                ifmt_ctx->streams[videoindex]->time_base;
-            //Duration between 2 frames (us)
-            int64_t calc_duration =
-                (double) AV_TIME_BASE /
-                av_q2d(ifmt_ctx->streams[videoindex]->r_frame_rate);
-            //Parameters
-            pkt.pts =
-                (double) (frame_index * calc_duration) /
-                (double) (av_q2d(time_base1) * AV_TIME_BASE);
-            pkt.dts = pkt.pts;
-            pkt.duration =
-                (double) calc_duration / (double) (av_q2d(time_base1) *
-                                                   AV_TIME_BASE);
-        }
-        //Important:Delay
-        if (pkt.stream_index == videoindex) {
-            AVRational time_base =
-                ifmt_ctx->streams[videoindex]->time_base;
-            AVRational time_base_q = { 1, AV_TIME_BASE };
-            int64_t pts_time =
-                av_rescale_q(pkt.dts, time_base, time_base_q);
-            int64_t now_time = av_gettime() - start_time;
-            if (pts_time > now_time)
-                av_usleep(pts_time - now_time);
-
-        }
 
         in_stream = ifmt_ctx->streams[pkt.stream_index];
         out_stream = ofmt_ctx->streams[pkt.stream_index];
         /* copy packet */
+        //Convert PTS/DTS
         pkt.pts =
             av_rescale_q_rnd(pkt.pts, in_stream->time_base,
                              out_stream->time_base,
@@ -133,8 +116,15 @@ int push(cmdArgsPtr args)
         pkt.pos = -1;
         //Print to Screen
         if (pkt.stream_index == videoindex) {
-            printf("Send %8d video frames to output URL\n", frame_index);
+            printf("Receive %8d video frames from input URL\n",
+                   frame_index);
             frame_index++;
+
+#if USE_H264BSF
+            av_bitstream_filter_filter(h264bsfc, in_stream->codec, NULL,
+                                       &pkt.data, &pkt.size, pkt.data,
+                                       pkt.size, 0);
+#endif
         }
         //ret = av_write_frame(ofmt_ctx, &pkt);
         ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
@@ -147,6 +137,12 @@ int push(cmdArgsPtr args)
         av_free_packet(&pkt);
 
     }
+
+#if USE_H264BSF
+    av_bitstream_filter_close(h264bsfc);
+#endif
+
+    //Write file trailer
     av_write_trailer(ofmt_ctx);
   end:
     avformat_close_input(&ifmt_ctx);

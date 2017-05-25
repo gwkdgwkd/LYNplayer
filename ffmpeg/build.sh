@@ -159,7 +159,11 @@ build_ffmpeg()
 	  --enable-libvpx \
 	  --enable-libx264 \
 	  --enable-nonfree \
-	  --enable-x11grab
+	  --enable-x11grab \
+          --enable-libxcb \
+          --enable-libxcb-shm \
+          --enable-libxcb-xfixes \
+          --enable-libxcb-shape
 	PATH="$BUILD/bin:$PATH" make
 	make install
 	#make distclean

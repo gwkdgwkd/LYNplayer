@@ -21,6 +21,7 @@ extern int muxer(cmdArgsPtr args);
 extern int remuxer(cmdArgsPtr args);
 extern int push(cmdArgsPtr args);
 extern int receive(cmdArgsPtr args);
+extern int grabdesktop(cmdArgsPtr args);
 
 action act[ACIDMAXID] = {
     {ACIDPLAY, "play", NOOUTPUT, NULL, play_vedio},
@@ -47,6 +48,8 @@ action act[ACIDMAXID] = {
     {ACIDREMUXER, "remuxer", HAVEOUTPUT, "remuxer.mp4", remuxer},
     {ACIDPUSH, "push", HAVEOUTPUT, NULL, push},
     {ACIDRECEIVE, "receive", HAVEOUTPUT, "receive.flv", receive},
+    {ACIDGRABDESKTOP, "grabdesktop", HAVEOUTPUT, "desktop.flv",
+     grabdesktop},
 };
 
 static int find_action(const char *actname)
@@ -153,6 +156,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
     } else if (!strcmp(inprotocol, "rtmp") && strcmp(outprotocol, "rtmp")
                && outlen > 0) {
         *actid = ACIDRECEIVE;
+    } else if (!strcmp(infile, "grabdesktop") && outlen > 0) {
+        *actid = ACIDGRABDESKTOP;
     } else {
         return -1;
     }

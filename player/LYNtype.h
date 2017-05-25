@@ -27,6 +27,7 @@ typedef enum actionId {
     ACIDREMUXER,
     ACIDPUSH,
     ACIDRECEIVE,
+    ACIDGRABDESKTOP,
     ACIDMAXID
 } actionId;
 

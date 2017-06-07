@@ -4,6 +4,10 @@
 #http://www.cnblogs.com/cocoajin/p/4353767.html
 #build nginx
 
+#install SSH
+#apt-get install openssl
+#apt-get install libssl-dev
+
 NGINXDIR=`pwd`
 BUILD=${NGINXDIR}/nginx_build
 

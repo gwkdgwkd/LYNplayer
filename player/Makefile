@@ -1,3 +1,6 @@
+#install libxcb-shm
+#sudo apt-get install libx11-xcb-dev libxcb-shm0-dev libxcb-xv0
+
 FFMPEG_BUILD=../ffmpeg/ffmpeg_build
 SDL2_BUILD=../SDL/sdl2_build
 SDL1.2_BUILD=../SDL/sdl1.2_build

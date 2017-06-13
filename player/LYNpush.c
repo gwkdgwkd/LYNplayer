@@ -89,8 +89,11 @@ int push(cmdArgsPtr args)
 
     av_dump_format(ifmt_ctx, 0, in_filename, 0);
 
-    avformat_alloc_output_context2(&ofmt_ctx, NULL, "flv", out_filename); //RTMP
-    //avformat_alloc_output_context2(&ofmt_ctx, NULL, "mpegts", out_filename);//UDP
+    if (!memcmp(out_filename, "rtmp", 4)) {
+        avformat_alloc_output_context2(&ofmt_ctx, NULL, "flv", out_filename); //RTMP
+    } else if (!memcmp(out_filename, "rtp", 3)) {
+        avformat_alloc_output_context2(&ofmt_ctx, NULL, "rtp_mpegts", out_filename); //UDP,rtp://233.233.233.233:6666
+    }
 
     if (!ofmt_ctx) {
         printf("Could not create output context\n");

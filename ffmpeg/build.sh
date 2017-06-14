@@ -8,6 +8,8 @@ BUILD=${FFMPEGDIR}/ffmpeg_build
 
 YASM=yasm-1.3.0
 YASMTAR=${YASM}.tar.gz
+NASM=nasm-2.13.01
+NASMTAR=${NASM}.tar.bz2
 LIBX264=x264-snapshot*
 LIBX264TAR=last_x264.tar.bz2
 LIBFDKAAC=mstorsjo-fdk-aac*
@@ -21,9 +23,9 @@ LIBVPXTAR=libvpx-1.6.0.tar.bz2
 FFMPEG=ffmpeg
 FFMPEGTAR=ffmpeg-snapshot.tar.bz2
 
-clear()
+clean()
 {
-	rm ${YASM} ${YASMTAR} ${LIBX264} ${LIBX264TAR} ${LIBFDKAAC} ${LIBFDKAACTAR} ${LIBMP3LAME} ${LIBMP3LAMETAR} ${LIBOPUS} ${LIBOPUSTAR} ${LIBVPX} ${LIBVPXTAR} ${FFMPEG} ${FFMPEGTAR} ${BUILD} -rf
+	rm ${YASM} ${YASMTAR} ${NASM} ${NASMTAR} ${LIBX264} ${LIBX264TAR} ${LIBFDKAAC} ${LIBFDKAACTAR} ${LIBMP3LAME} ${LIBMP3LAMETAR} ${LIBOPUS} ${LIBOPUSTAR} ${LIBVPX} ${LIBVPXTAR} ${FFMPEG} ${FFMPEGTAR} ${BUILD} -rf
 }
 
 build()
@@ -48,6 +50,20 @@ build()
 	make
 	make install
 	#make disclean
+
+	cd ${FFMPEGDIR}
+
+	# nasm
+	if [ ! -e ${NASMTAR} ];then
+		wget www.nasm.us/pub/nasm/releasebuilds/2.13.01/nasm-2.13.01.tar.bz2
+	fi
+	if [ ! -e ${NASM} ];then
+		tar xjvf nasm-2.13.01.tar.bz2
+	fi
+	cd ${NASM}
+	./configure --prefix="$BUILD" --bindir="$BUILD/bin"
+	make
+	make install
 
 	cd ${FFMPEGDIR}
 
@@ -159,11 +175,10 @@ build_ffmpeg()
 	  --enable-libvpx \
 	  --enable-libx264 \
 	  --enable-nonfree \
-	  --enable-x11grab \
-          --enable-libxcb \
-          --enable-libxcb-shm \
-          --enable-libxcb-xfixes \
-          --enable-libxcb-shape
+	  --enable-libxcb \
+	  --enable-libxcb-shm \
+	  --enable-libxcb-xfixes \
+	  --enable-libxcb-shape
 	PATH="$BUILD/bin:$PATH" make
 	make install
 	#make distclean
@@ -172,8 +187,8 @@ build_ffmpeg()
 
 }
 
-if [ "$1" == "clear" ];then
-	clear
+if [ "$1" == "clean" ];then
+	clean
 elif [ "$1" == "ffmpeg" ];then
 	build_ffmpeg
 else

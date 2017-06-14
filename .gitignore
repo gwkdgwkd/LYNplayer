@@ -12,6 +12,8 @@ ffmpeg/mstorsjo-fdk-aac-*
 ffmpeg/opus-1.1.tar.gz
 ffmpeg/opus-1.1/
 ffmpeg/x264-snapshot-*
+ffmpeg/nasm-2.13.01.tar.bz2
+ffmpeg/nasm-2.13.01/
 ffmpeg/yasm-1.3.0.tar.gz
 ffmpeg/yasm-1.3.0/
 SDL/libsdl1.2-1.2.15/

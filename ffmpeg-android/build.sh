@@ -5,8 +5,8 @@
 #http://blog.csdn.net/xiaoru5127/article/details/51524795
 
 FFMPEGDIR=`pwd`
-FFMPEG=ffmpeg
-FFMPEGTAR=ffmpeg-snapshot.tar.bz2
+FFMPEG=ffmpeg-3.3
+FFMPEGTAR=ffmpeg-3.3.tar.bz2
 TMP=tmpdir
 export TMPDIR=${FFMPEGDIR}/tmpdir
 NDK=${FFMPEGDIR}/android-ndk-r14b
@@ -45,7 +45,7 @@ function build_ffmpeg_for_android
 	mkdir -p ${BUILD}        
 
 	if [ ! -e ${FFMPEGTAR} ];then
-		wget http://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+		wget http://ffmpeg.org/releases/ffmpeg-3.3.tar.bz2
 	fi
 	if [ ! -e ${FFMPEG} ];then
 		tar xjvf ${FFMPEGTAR}

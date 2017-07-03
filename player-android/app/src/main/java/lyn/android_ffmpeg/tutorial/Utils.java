@@ -1,4 +1,4 @@
-package lyn.android_ffmpeg.tutorial01;
+package lyn.android_ffmpeg.tutorial;
 
 import java.io.File;
 import java.io.FileOutputStream;

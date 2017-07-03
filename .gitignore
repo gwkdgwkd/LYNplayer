@@ -73,12 +73,8 @@ player-android/.navigation/
 player-android/captures/
 
 # Intellij
-player-android/*.iml
-player-android/.idea/workspace.xml
-player-android/.idea/tasks.xml
-player-android/.idea/gradle.xml
-player-android/.idea/dictionaries
-player-android/.idea/libraries
+player-android/**/*.iml
+player-android/.idea/
 
 # Keystore files
 player-android/*.jks

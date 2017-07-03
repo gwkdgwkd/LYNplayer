@@ -140,9 +140,9 @@ public class MainActivity extends Activity {
 		}
 		public Object instantiateItem(View collection, int position) {
 			ImageView view = new ImageView(mlAct);
-			view.setLayoutParams(new LayoutParams(LayoutParams.FILL_PARENT,
-			    LayoutParams.FILL_PARENT));
-			view.setScaleType(ScaleType.CENTER_INSIDE);
+			view.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT,
+			    LayoutParams.MATCH_PARENT));
+			view.setScaleType(ScaleType.FIT_XY);
 			view.setImageDrawable(Drawable.createFromPath(mlFramePaths.get(position)));
 			((ViewPager) collection).addView(view);
 			return view;

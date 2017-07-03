@@ -5,12 +5,12 @@ android {
     buildToolsVersion "25.0.2"
 
     defaultConfig {
-        applicationId "lyn.android_ffmpeg.tutorial01"
+        applicationId "lyn.android_ffmpeg.tutorial"
         minSdkVersion 10
         targetSdkVersion 18
 
         ndk {
-            moduleName "avcodec"
+            moduleName "tutorial02"
         }
     }
     sourceSets.main {

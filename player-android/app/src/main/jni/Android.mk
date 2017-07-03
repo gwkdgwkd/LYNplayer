@@ -28,9 +28,9 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 # Program
 include $(CLEAR_VARS)
-LOCAL_MODULE    := tutorial01
-LOCAL_SRC_FILES := tutorial01.c
+LOCAL_MODULE    := tutorial
+LOCAL_SRC_FILES := tutorial.c
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
-LOCAL_LDLIBS := -llog -lz -ljnigraphics
+LOCAL_LDLIBS := -llog -lz -ljnigraphics -landroid
 LOCAL_SHARED_LIBRARIES := avcodec avformat avutil swscale swresample
 include $(BUILD_SHARED_LIBRARY)

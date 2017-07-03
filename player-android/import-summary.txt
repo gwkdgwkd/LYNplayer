@@ -33,7 +33,6 @@ Eclipse projects. Here's how the projects were restructured:
 * libs/armeabi/libavformat-55.so => app/src/main/jniLibs/armeabi/libavformat-55.so
 * libs/armeabi/libavutil-52.so => app/src/main/jniLibs/armeabi/libavutil-52.so
 * libs/armeabi/libswscale-2.so => app/src/main/jniLibs/armeabi/libswscale-2.so
-* libs/armeabi/libtutorial01.so => app/src/main/jniLibs/armeabi/libtutorial01.so
 * res/ => app/src/main/res/
 * src/ => app/src/main/java/
 

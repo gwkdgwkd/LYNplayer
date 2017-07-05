@@ -207,7 +207,7 @@ void decodeAndRender(JNIEnv *pEnv) {
 			   &packet);
 			// Did we get a video frame?
 			if(frameFinished) {
-                ///* save frame after decode to yuv file
+                /* save frame after decode to yuv file
                 if(i < 20){
                     FILE *fp;
                     int j;
@@ -235,7 +235,7 @@ void decodeAndRender(JNIEnv *pEnv) {
 					frameRGBA->linesize
 				);
 
-                ///* save frame after scale to rgba file
+                /* save frame after scale to rgba file
                 if(i < 20){
                     FILE *fp;
                     fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");

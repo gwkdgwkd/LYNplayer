@@ -72,6 +72,7 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
 	}
 	if(videoStream==-1)
 		return -1; // Didn't find a video stream
+
 	// Get a pointer to the codec context for the video stream
 	codecCtx=formatCtx->streams[videoStream]->codec;
 	// Find the decoder for the video stream
@@ -206,6 +207,22 @@ void decodeAndRender(JNIEnv *pEnv) {
 			   &packet);
 			// Did we get a video frame?
 			if(frameFinished) {
+                ///* save frame after decode to yuv file
+                if(i < 20){
+                    FILE *fp;
+                    int j;
+                    fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.yuv","ab");
+                    for (j = 0; j<codecCtx->height; j++) {
+                        fwrite(decodedFrame->data[0] + j*decodedFrame->linesize[0], codecCtx->width, 1, fp);
+                    }
+                    for (j = 0; j<codecCtx->height/2; j++) {
+                        fwrite(decodedFrame->data[1] + j*decodedFrame->linesize[1], codecCtx->width/2, 1, fp);
+                    }
+                    for (j = 0; j<codecCtx->height/2; j++){
+                        fwrite(decodedFrame->data[2] + j*decodedFrame->linesize[2], codecCtx->width/2, 1, fp);
+                    }
+                    fclose(fp);
+                }//*/
 				// Convert the image from its native format to RGBA
 				sws_scale
 				(
@@ -217,6 +234,16 @@ void decodeAndRender(JNIEnv *pEnv) {
 					frameRGBA->data,
 					frameRGBA->linesize
 				);
+
+                ///* save frame after scale to rgba file
+                if(i < 20){
+                    FILE *fp;
+                    fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
+                    for (int j = 0; j<height; j++) {
+                        fwrite(frameRGBA->data[0] + j*frameRGBA->linesize[0], width*4, 1, fp);
+                    }
+                    fclose(fp);
+                }//*/
 				// lock the window buffer
 				if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
 					LOGE("cannot lock window");
@@ -225,7 +252,12 @@ void decodeAndRender(JNIEnv *pEnv) {
 					LOGI("copy buffer %d:%d:%d", width, height, width*height*4);
 					LOGI("window buffer: %d:%d:%d", windowBuffer.width,
 							windowBuffer.height, windowBuffer.stride);
-					memcpy(windowBuffer.bits, buffer,  width * height * 4);
+					//memcpy(windowBuffer.bits, buffer,  width * height * 4);
+                    for (int h = 0; h < height; h++){
+                      memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
+                             buffer + h * frameRGBA->linesize[0],
+                             width*4);
+                    }
 					// unlock the window buffer and post it to display
 					ANativeWindow_unlockAndPost(window);
 					// count number of frames

@@ -26,9 +26,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 			+ File.separator + "android-ffmpeg-tutorial02";
 	
 	// video used to fill the width of the screen 
-	private static final String videoFileName = "1.mp4";  	//640x360
+	private static final String videoFileName = "1.mp4";  	//304x544
 	// video used to fill the height of the screen
-//	private static final String videoFileName = "12.mp4";   //200x640
+	//private static final String videoFileName = "2.mp4";   //480x208
+	//private static final String videoFileName = "1.flv";   //640x360
 	
 	private SurfaceView mSurfaceView;
 	
@@ -49,7 +50,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
-	        
 		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override

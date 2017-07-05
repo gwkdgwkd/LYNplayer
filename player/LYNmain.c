@@ -7,6 +7,7 @@
 extern int play_vedio(cmdArgsPtr args);
 extern int play_yuv420p(cmdArgsPtr args);
 extern int video2rgbfiles(cmdArgsPtr args);
+extern int video2rgbfile(cmdArgsPtr args);
 extern int video2yuv422pfiles(cmdArgsPtr args);
 extern int video2yuv422pfile(cmdArgsPtr args);
 extern int video2yuv420pfiles(cmdArgsPtr args);
@@ -28,6 +29,8 @@ action act[ACIDMAXID] = {
     {ACIDPLAYYUV420P, "playyuv420p", NOOUTPUT, NULL, play_yuv420p},
     {ACIDVIDEO2RGB24FILES, "video2rgb24files", HAVEOUTPUT, "rgb24",
      video2rgbfiles},
+    {ACIDVIDEO2RGB24FILE, "video2rgbafile", HAVEOUTPUT, "rgba",
+     video2rgbfile},
     {ACIDVIDEO2YUV422PFILES, "video2yuv422pfiles", HAVEOUTPUT, "yuv422p",
      video2yuv422pfiles},
     {ACIDVIDEO2YUV422PFILE, "video2yuv422pfile", HAVEOUTPUT, "yuv422p",
@@ -108,6 +111,8 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
         *actid = ACIDVIDEO2YUV420PFILE;
     } else if (!strcmp(outext, "ppm")) {
         *actid = ACIDVIDEO2RGB24FILES;
+    } else if (!strcmp(outext, "rgba")) {
+        *actid = ACIDVIDEO2RGB24FILE;
     } else if ((!strcmp(outext, "h264") || !strcmp(outext, "h265")
                 || !strcmp(outext, "hevc") || !strcmp(outext, "mpg"))
                && !strcmp(inext, "yuv")) {
@@ -168,7 +173,7 @@ static int guess_id(const char *infile, const char *outfile, int *actid)
 
 static void set_default_arg(cmdArgsPtr args, int actid)
 {
-    if ((actid == ACIDVIDEO2RGB24FILES ||
+    if ((actid == ACIDVIDEO2RGB24FILES || actid == ACIDVIDEO2RGB24FILE ||
          actid == ACIDVIDEO2YUV422PFILES ||
          actid == ACIDVIDEO2YUV422PFILE ||
          actid == ACIDVIDEO2YUV420PFILES || actid == ACIDVIDEO2YUV420PFILE

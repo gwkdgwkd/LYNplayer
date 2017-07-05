@@ -15,18 +15,30 @@ void save_frame(AVFrame * pFrame, int width, int height, int iFrame,
     for (i = len - 1; i >= 0; i--) {
         if ('.' == outfile[i]) {
             memcpy(ext, outfile + i + 1, len - i - 1);
-            if (!strcmp(ext, "yuv") || !strcmp(ext, "ppm")) {
+            if (!strcmp(ext, "yuv") || !strcmp(ext, "ppm")
+                || !strcmp(ext, "rgba")) {
                 memcpy(head, outfile, i);
             } else {
-                memcpy(ext, (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv",
-                       3);
+                if (AV_PIX_FMT_RGB24 == format) {
+                    memcpy(ext, "ppm", 3);
+                } else if (AV_PIX_FMT_RGBA == format) {
+                    memcpy(ext, "rgba", 4);
+                } else {
+                    memcpy(ext, "yuv", 3);
+                }
                 memcpy(head, outfile, len);
             }
             break;
         }
     }
     if (i < 0) {
-        memcpy(ext, (AV_PIX_FMT_RGB24 == format) ? "ppm" : "yuv", 3);
+        if (AV_PIX_FMT_RGB24 == format) {
+            memcpy(ext, "ppm", 3);
+        } else if (AV_PIX_FMT_RGBA == format) {
+            memcpy(ext, "rgba", 4);
+        } else {
+            memcpy(ext, "yuv", 3);
+        }
         memcpy(head, outfile, len);
     }
     // Open file
@@ -47,6 +59,12 @@ void save_frame(AVFrame * pFrame, int width, int height, int iFrame,
         // Write pixel data
         for (y = 0; y < height; y++) {
             fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3,
+                   fp);
+        }
+    } else if (AV_PIX_FMT_RGBA == format) {
+        // Write pixel data
+        for (y = 0; y < height; y++) {
+            fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 4,
                    fp);
         }
     } else if (AV_PIX_FMT_YUV420P == format) {
@@ -170,11 +188,12 @@ int do_decode(cmdArgsPtr args, enum AVPixelFormat format, int fileflag)
                           infile.pFrameTarget->linesize);
 
                 // Save the frame to disk
-                if (++i <= args->framenum || 0 == args->framenum)
+                if (++i <= args->framenum || 0 == args->framenum) {
                     save_frame(infile.pFrameTarget,
                                infile.pCodecCtx->width,
                                infile.pCodecCtx->height, i * fileflag,
                                format, args->outfile);
+                }
             }
         }
         // Free the packet that was allocated by av_read_frame
@@ -203,6 +222,13 @@ int video2rgbfiles(cmdArgsPtr args)
     return do_decode(args, AV_PIX_FMT_RGB24, 1);
 }
 
+int video2rgbfile(cmdArgsPtr args)
+{
+    //android display format RGBA
+    //ffplay -f rawvideo -pixel_format rgba -video_size 304x544 rgbafile
+    return do_decode(args, AV_PIX_FMT_RGBA, 0);
+}
+
 int video2yuv422pfiles(cmdArgsPtr args)
 {
     return do_decode(args, AV_PIX_FMT_YUV422P, 1);
@@ -215,6 +241,7 @@ int video2yuv422pfile(cmdArgsPtr args)
 
 int video2yuv420pfiles(cmdArgsPtr args)
 {
+    //ffplay -f rawvideo -pixel_format yuv420p -video_size 304x544 yuvfile
     return do_decode(args, AV_PIX_FMT_YUV420P, 1);
 }
 

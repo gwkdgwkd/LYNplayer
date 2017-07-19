@@ -43,7 +43,8 @@ void*				buffer;
 struct SwsContext   *sws_ctx = NULL;
 int 				width;
 int 				height;
-int					stop;
+int					stop = -1;
+pthread_mutex_t     mutex;
 
 jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
 	AVCodec         *pCodec = NULL;
@@ -90,6 +91,7 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
 	frameRGBA=av_frame_alloc();
 	if(frameRGBA==NULL)
 		return -1;
+	pthread_mutex_init(&mutex, NULL);
 	return 0;
 }
 
@@ -140,7 +142,11 @@ jintArray naGetVideoRes(JNIEnv *pEnv, jobject pObj) {
 }
 
 void naSetSurface(JNIEnv *pEnv, jobject pObj, jobject pSurface) {
+	pthread_mutex_lock(&mutex);
 	if (0 != pSurface) {
+        if(stop == 0){
+            ANativeWindow_release(window);
+        }
 		// get the native window reference
 		window = ANativeWindow_fromSurface(pEnv, pSurface);
 		// set format and size of window buffer
@@ -154,6 +160,7 @@ void naSetSurface(JNIEnv *pEnv, jobject pObj, jobject pSurface) {
 jint naSetup(JNIEnv *pEnv, jobject pObj, int pWidth, int pHeight) {
 	width = pWidth;
 	height = pHeight;
+
 	//create a bitmap as the buffer for frameRGBA
 	bitmap = createBitmap(pEnv, pWidth, pHeight);
 	if (AndroidBitmap_lockPixels(pEnv, bitmap, &buffer) < 0)
@@ -176,10 +183,12 @@ jint naSetup(JNIEnv *pEnv, jobject pObj, int pWidth, int pHeight) {
 	// of AVPicture
 	avpicture_fill((AVPicture *)frameRGBA, buffer, AV_PIX_FMT_RGBA,
 			pWidth, pHeight);
+	pthread_mutex_unlock(&mutex);
 	return 0;
 }
 
 void finish(JNIEnv *pEnv) {
+	pthread_mutex_destroy(&mutex);
 	//unlock the bitmap
 	AndroidBitmap_unlockPixels(pEnv, bitmap);
 	av_free(buffer);
@@ -207,6 +216,7 @@ void decodeAndRender(JNIEnv *pEnv) {
 			   &packet);
 			// Did we get a video frame?
 			if(frameFinished) {
+				pthread_mutex_lock(&mutex);
                 /* save frame after decode to yuv file
                 if(i < 20){
                     FILE *fp;
@@ -234,7 +244,6 @@ void decodeAndRender(JNIEnv *pEnv) {
 					frameRGBA->data,
 					frameRGBA->linesize
 				);
-
                 /* save frame after scale to rgba file
                 if(i < 20){
                     FILE *fp;
@@ -252,17 +261,20 @@ void decodeAndRender(JNIEnv *pEnv) {
 					LOGI("copy buffer %d:%d:%d", width, height, width*height*4);
 					LOGI("window buffer: %d:%d:%d", windowBuffer.width,
 							windowBuffer.height, windowBuffer.stride);
-					//memcpy(windowBuffer.bits, buffer,  width * height * 4);
-                    for (int h = 0; h < height; h++){
-                      memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
-                             buffer + h * frameRGBA->linesize[0],
-                             width*4);
-                    }
+					if(width == windowBuffer.width && height == windowBuffer.height){
+						//memcpy(windowBuffer.bits, buffer,  width * height * 4);
+						for (int h = 0; h < height; h++){
+							memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
+								buffer + h * frameRGBA->linesize[0],
+								width*4);
+						}
+					}
 					// unlock the window buffer and post it to display
 					ANativeWindow_unlockAndPost(window);
 					// count number of frames
 					++i;
 				}
+				pthread_mutex_unlock(&mutex);
 			}
 		}
 		// Free the packet that was allocated by av_read_frame

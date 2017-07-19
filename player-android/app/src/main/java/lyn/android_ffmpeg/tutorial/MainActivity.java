@@ -2,6 +2,7 @@ package lyn.android_ffmpeg.tutorial;
 
 import java.io.File;
 
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -54,25 +55,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
-				int[] res = naGetVideoRes();
-				Log.d(TAG, "res width " + res[0] + ": height " + res[1]);
-				int[] screenRes = getScreenRes();
-				int width, height;
-				float widthScaledRatio = screenRes[0]*1.0f/res[0];
-				float heightScaledRatio = screenRes[1]*1.0f/res[1];
-				if (widthScaledRatio > heightScaledRatio) {
-					//use heightScaledRatio
-					width = (int) (res[0]*heightScaledRatio);
-					height = screenRes[1];
-				} else {
-					//use widthScaledRatio
-					width = screenRes[0];
-					height = (int) (res[1]*widthScaledRatio);
-				}
-				Log.d(TAG, "width " + width + ",height:" + height);
-				updateSurfaceView(width, height);
-				naSetup(width, height);
 				naPlay();
 			}
 		});
@@ -101,7 +83,33 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		}
 		return res;
 	}
-	
+
+	private void setSurfaceSize(){
+		int[] res = naGetVideoRes();
+		Log.d(TAG, "res width " + res[0] + ": height " + res[1]);
+		int[] screenRes = getScreenRes();
+		int width, height;
+		float widthScaledRatio = screenRes[0]*1.0f/res[0];
+		float heightScaledRatio = screenRes[1]*1.0f/res[1];
+		if (widthScaledRatio > heightScaledRatio) {
+			//use heightScaledRatio
+			width = (int) (res[0]*heightScaledRatio);
+			height = screenRes[1];
+		} else {
+			//use widthScaledRatio
+			width = screenRes[0];
+			height = (int) (res[1]*widthScaledRatio);
+		}
+		Log.d(TAG, "width " + width + ",height:" + height);
+		updateSurfaceView(width, height);
+	}
+
+	@Override
+	public void onConfigurationChanged(Configuration newConfig) {
+		super.onConfigurationChanged(newConfig);
+		setSurfaceSize();
+	}
+
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
@@ -113,11 +121,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 			int height) {
 		Log.d(TAG, "surfacechanged: " + width + ":" + height);
 		naSetSurface(holder.getSurface());
+		naSetup(width, height);
 	}
 
 	@Override
 	public void surfaceCreated(SurfaceHolder holder) {
-		
+		Log.d(TAG, "surfaceCreated");
+		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
+		setSurfaceSize();
 	}
 
 	@Override

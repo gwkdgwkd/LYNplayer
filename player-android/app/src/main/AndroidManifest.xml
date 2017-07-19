@@ -17,7 +17,8 @@
         android:theme="@style/AppTheme" >
         <activity
             android:name="lyn.android_ffmpeg.tutorial.MainActivity"
-            android:label="@string/app_name" >
+            android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|keyboardHidden" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

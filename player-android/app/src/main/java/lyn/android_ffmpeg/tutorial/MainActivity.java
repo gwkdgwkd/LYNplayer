@@ -143,13 +143,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static native int naSetup(int pWidth, int pHeight);
 	private static native void naPlay();
 	private static native void naStop();
-	
-    static {
-		System.loadLibrary("avutil-55");
-		System.loadLibrary("avcodec-57");
-		System.loadLibrary("avformat-57");
-		System.loadLibrary("swresample-2");
-		System.loadLibrary("swscale-4");
+
+	static {
+		System.loadLibrary("avutil");
+		System.loadLibrary("avcodec");
+		System.loadLibrary("avformat");
+		System.loadLibrary("swresample");
+		System.loadLibrary("swscale");
 		System.loadLibrary("tutorial");
     }
 }

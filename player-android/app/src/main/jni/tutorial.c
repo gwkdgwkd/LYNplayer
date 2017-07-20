@@ -77,7 +77,8 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
 	// Get a pointer to the codec context for the video stream
 	codecCtx=formatCtx->streams[videoStream]->codec;
 	// Find the decoder for the video stream
-	pCodec=avcodec_find_decoder(codecCtx->codec_id);
+	//pCodec=avcodec_find_decoder(codecCtx->codec_id);
+	pCodec=avcodec_find_decoder_by_name("h264_mediacodec");
 	if(pCodec==NULL) {
 		fprintf(stderr, "Unsupported codec!\n");
 		return -1; // Codec not found
@@ -334,6 +335,7 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	jclass cls = (*env)->FindClass(env, "lyn/android_ffmpeg/tutorial/MainActivity");
 	//Register methods with env->RegisterNatives.
 	(*env)->RegisterNatives(env, cls, nm, 6);
+	av_jni_set_java_vm(pVm, NULL);
 	return JNI_VERSION_1_6;
 }
 

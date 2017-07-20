@@ -67,8 +67,10 @@ function build_ffmpeg_for_android
 	--disable-doc \
 	--disable-symver \
 	--enable-small \
+	--enable-jni \
+	--enable-mediacodec \
 	--cross-prefix=${CROSSPREFIX} \
-	--target-os=linux \
+	--target-os=android \
 	--arch=$ARCH \
 	--enable-cross-compile \
 	--sysroot=$SYSROOT \

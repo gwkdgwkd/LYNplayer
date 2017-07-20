@@ -3,27 +3,27 @@ LOCAL_PATH := $(call my-dir)
 # FFmpeg library
 include $(CLEAR_VARS)
 LOCAL_MODULE := avcodec
-LOCAL_SRC_FILES := lib/libavcodec-57.so
+LOCAL_SRC_FILES := lib/libavcodec.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := avformat
-LOCAL_SRC_FILES := lib/libavformat-57.so
+LOCAL_SRC_FILES := lib/libavformat.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := avutil
-LOCAL_SRC_FILES := lib/libavutil-55.so
+LOCAL_SRC_FILES := lib/libavutil.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := swscale
-LOCAL_SRC_FILES := lib/libswscale-4.so
+LOCAL_SRC_FILES := lib/libswscale.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := swresample
-LOCAL_SRC_FILES := lib/libswresample-2.so
+LOCAL_SRC_FILES := lib/libswresample.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 # Program

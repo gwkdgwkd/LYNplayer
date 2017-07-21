@@ -94,3 +94,6 @@ player-android/freeline_project_description.json
 player-android/app/src/main/libs/
 player-android/app/src/main/obj/
 player-android/app/build
+
+libyuv/libyuv-master/
+libyuv/master.zip

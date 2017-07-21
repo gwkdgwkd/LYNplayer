@@ -1,0 +1,14 @@
+--- Android.mk	2017-07-21 16:26:18.183009385 +0800
++++ libyuv-master/Android.mk	2015-10-18 14:03:45.000000000 +0800
+@@ -56,9 +56,8 @@
+ LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
+ LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
+ 
+-LOCAL_MODULE := libyuv
++LOCAL_MODULE := libyuv_static
+ LOCAL_MODULE_TAGS := optional
+ 
+-#include $(BUILD_STATIC_LIBRARY)
+-include $(BUILD_SHARED_LIBRARY)
++include $(BUILD_STATIC_LIBRARY)
+ 

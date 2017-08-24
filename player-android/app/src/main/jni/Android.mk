@@ -26,11 +26,16 @@ LOCAL_MODULE := swresample
 LOCAL_SRC_FILES := lib/libswresample.so
 include $(PREBUILT_SHARED_LIBRARY)
 
+include $(CLEAR_VARS)
+LOCAL_MODULE := yuv
+LOCAL_SRC_FILES := lib/libyuv.so
+include $(PREBUILT_SHARED_LIBRARY)
+
 # Program
 include $(CLEAR_VARS)
 LOCAL_MODULE    := tutorial
 LOCAL_SRC_FILES := tutorial.c
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_LDLIBS := -llog -lz -ljnigraphics -landroid
-LOCAL_SHARED_LIBRARIES := avcodec avformat avutil swscale swresample
+LOCAL_SHARED_LIBRARIES := avcodec avformat avutil swscale swresample yuv
 include $(BUILD_SHARED_LIBRARY)

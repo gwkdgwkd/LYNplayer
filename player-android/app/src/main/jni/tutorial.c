@@ -19,6 +19,7 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 #include <libavutil/pixfmt.h>
+#include "libyuv.h"
 
 #include <stdio.h>
 #include <pthread.h>
@@ -26,6 +27,8 @@
 #include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
+
+#include <sys/time.h>
 
 #define LOG_TAG "android-ffmpeg-tutorial02"
 #define LOGI(...) __android_log_print(4, LOG_TAG, __VA_ARGS__);
@@ -37,13 +40,16 @@ AVFormatContext 	*formatCtx = NULL;
 int 				videoStream;
 AVCodecContext  	*codecCtx = NULL;
 AVFrame         	*decodedFrame = NULL;
+AVFrame         	*scaleFrame = NULL;
 AVFrame         	*frameRGBA = NULL;
 jobject				bitmap;
 void*				buffer;
+void*				scalebuffer;
 struct SwsContext   *sws_ctx = NULL;
 int 				width;
 int 				height;
 int					stop = -1;
+int 				scalebuffersize;
 pthread_mutex_t     mutex;
 
 jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
@@ -88,6 +94,7 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
 		return -1; // Could not open codec
 	// Allocate video frame
 	decodedFrame=av_frame_alloc();
+	scaleFrame=av_frame_alloc();
 	// Allocate an AVFrame structure
 	frameRGBA=av_frame_alloc();
 	if(frameRGBA==NULL)
@@ -184,6 +191,13 @@ jint naSetup(JNIEnv *pEnv, jobject pObj, int pWidth, int pHeight) {
 	// of AVPicture
 	avpicture_fill((AVPicture *)frameRGBA, buffer, AV_PIX_FMT_RGBA,
 			pWidth, pHeight);
+
+	scalebuffersize = avpicture_get_size(AV_PIX_FMT_YUV420P, pWidth, pHeight);
+	if(scalebuffer != NULL){
+	    free(scalebuffer);
+	}
+	scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
+	avpicture_fill((AVPicture *)scaleFrame, scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
 	pthread_mutex_unlock(&mutex);
 	return 0;
 }
@@ -193,10 +207,12 @@ void finish(JNIEnv *pEnv) {
 	//unlock the bitmap
 	AndroidBitmap_unlockPixels(pEnv, bitmap);
 	av_free(buffer);
+	av_free(scalebuffer);
 	// Free the RGB image
 	av_free(frameRGBA);
 	// Free the YUV frame
 	av_free(decodedFrame);
+	av_free(scaleFrame);
 	// Close the codec
 	avcodec_close(codecCtx);
 	// Close the video file
@@ -209,12 +225,19 @@ void decodeAndRender(JNIEnv *pEnv) {
 	int 					i=0;
 	int            			frameFinished;
 	int 					lineCnt;
+	struct timeval start;
+	struct timeval end;
+	float time_use=0;
 	while(av_read_frame(formatCtx, &packet)>=0 && !stop) {
 		// Is this a packet from the video stream?
 		if(packet.stream_index==videoStream) {
+			//gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
 			// Decode video frame
 			avcodec_decode_video2(codecCtx, decodedFrame, &frameFinished,
 			   &packet);
+			//gettimeofday(&end,NULL);
+			//time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+			//LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
 			// Did we get a video frame?
 			if(frameFinished) {
 				pthread_mutex_lock(&mutex);
@@ -235,6 +258,8 @@ void decodeAndRender(JNIEnv *pEnv) {
                     fclose(fp);
                 }//*/
 				// Convert the image from its native format to RGBA
+				gettimeofday(&start,NULL);
+				#if 0
 				sws_scale
 				(
 					sws_ctx,
@@ -245,6 +270,26 @@ void decodeAndRender(JNIEnv *pEnv) {
 					frameRGBA->data,
 					frameRGBA->linesize
 				);
+				#else
+				I420Scale(decodedFrame->data[0],decodedFrame->linesize[0],
+						  decodedFrame->data[1],decodedFrame->linesize[1],
+						  decodedFrame->data[2],decodedFrame->linesize[2],
+						  codecCtx->width,codecCtx->height,
+						  scaleFrame->data[0],scaleFrame->linesize[0],
+						  scaleFrame->data[1],scaleFrame->linesize[1],
+						  scaleFrame->data[2],scaleFrame->linesize[2],
+						  width,height,kFilterNone);
+
+				//why not I420ToRGBA？ ijkplayer uses I420ToABGR
+				I420ToABGR(scaleFrame->data[0],scaleFrame->linesize[0],
+						  scaleFrame->data[1],scaleFrame->linesize[1],
+						  scaleFrame->data[2],scaleFrame->linesize[2],
+						  frameRGBA->data[0],frameRGBA->linesize[0],
+						  width,height);
+				#endif
+				gettimeofday(&end,NULL);
+				time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+				LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
                 /* save frame after scale to rgba file
                 if(i < 20){
                     FILE *fp;

@@ -20,6 +20,9 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
+import android.media.AudioTrack;
+import android.media.AudioFormat;
+import android.os.Handler;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static final String TAG = "android-ffmpeg-tutorial02";
@@ -33,6 +36,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	//private static final String videoFileName = "1.flv";   //640x360
 	
 	private SurfaceView mSurfaceView;
+	private AudioTrack audioTrack;
+	private int samplerate,channeltype,sampleformat,minbufsize;
+	private Handler handler = new Handler();
+
+	private Runnable audioUpdateThread = new Runnable(){
+		public void run() {
+			while(true) {
+				byte[] pcm = new byte[minbufsize];
+				int dsize = naGetPcmBuffer(pcm,minbufsize);
+				if (audioTrack.write(pcm, 0, dsize) < dsize) {
+					Log.w(null, "Data not written completely");
+				}
+			}
+			//handler.postDelayed(audioUpdateThread,50);
+		}
+	};
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -51,10 +70,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
+
+		int[] info = naGetAudioInfo();
+		Log.d(TAG, "info rate " + info[0] + ": channels " + info[1] + ": fmt " + info[2]);
+		samplerate = info[0];
+		if (info[1] == 4) { //AV_CH_LAYOUT_MONO
+			channeltype = AudioFormat.CHANNEL_OUT_MONO;
+		}else { //AV_CH_LAYOUT_STEREO and other
+			channeltype = AudioFormat.CHANNEL_OUT_STEREO;
+		}
+		if (info[2] == 6) { //AV_SAMPLE_FMT_S16P
+			sampleformat = AudioFormat.ENCODING_PCM_16BIT;
+		} else {
+			sampleformat = AudioFormat.ENCODING_DEFAULT;
+		}
+		minbufsize=AudioTrack.getMinBufferSize (samplerate, channeltype, sampleformat);
+		audioTrack = new AudioTrack(android.media.AudioManager.STREAM_MUSIC,samplerate,channeltype,
+				sampleformat,minbufsize*2,AudioTrack.MODE_STREAM);
+
 		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
+				audioTrack.play();
+				handler.post(audioUpdateThread);
 				naPlay();
 			}
 		});
@@ -139,6 +178,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	
 	private static native int naInit(String pFileName); 
 	private static native int[] naGetVideoRes();
+	private static native int[] naGetAudioInfo();
+	private static native int naGetPcmBuffer(byte[] pcm,int len);
 	private static native void naSetSurface(Surface pSurface);
 	private static native int naSetup(int pWidth, int pHeight);
 	private static native void naPlay();

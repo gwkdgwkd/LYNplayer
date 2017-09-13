@@ -42,14 +42,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
 	private Runnable audioUpdateThread = new Runnable(){
 		public void run() {
-			while(true) {
-				byte[] pcm = new byte[minbufsize];
-				int dsize = naGetPcmBuffer(pcm,minbufsize);
-				if (audioTrack.write(pcm, 0, dsize) < dsize) {
-					Log.w(null, "Data not written completely");
-				}
+			byte[] pcm = new byte[minbufsize];
+			int dsize = naGetPcmBuffer(pcm,minbufsize);
+			if (audioTrack.write(pcm, 0, dsize) < dsize) {
+				Log.w(null, "Data not written completely");
 			}
-			//handler.postDelayed(audioUpdateThread,50);
+			handler.postDelayed(audioUpdateThread,50);
 		}
 	};
 	
@@ -70,24 +68,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
-
-		int[] info = naGetAudioInfo();
-		Log.d(TAG, "info rate " + info[0] + ": channels " + info[1] + ": fmt " + info[2]);
-		samplerate = info[0];
-		if (info[1] == 4) { //AV_CH_LAYOUT_MONO
-			channeltype = AudioFormat.CHANNEL_OUT_MONO;
-		}else { //AV_CH_LAYOUT_STEREO and other
-			channeltype = AudioFormat.CHANNEL_OUT_STEREO;
-		}
-		if (info[2] == 6) { //AV_SAMPLE_FMT_S16P
-			sampleformat = AudioFormat.ENCODING_PCM_16BIT;
-		} else {
-			sampleformat = AudioFormat.ENCODING_DEFAULT;
-		}
-		minbufsize=AudioTrack.getMinBufferSize (samplerate, channeltype, sampleformat);
-		audioTrack = new AudioTrack(android.media.AudioManager.STREAM_MUSIC,samplerate,channeltype,
-				sampleformat,minbufsize*2,AudioTrack.MODE_STREAM);
-
 		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override
@@ -152,6 +132,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
+		handler.removeCallbacks(audioUpdateThread);
 		naStop();
 	}
 
@@ -168,6 +149,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		Log.d(TAG, "surfaceCreated");
 		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
 		setSurfaceSize();
+
+		int[] info = naGetAudioInfo();
+		Log.d(TAG, "info rate " + info[0] + ": channels " + info[1] + ": fmt " + info[2]);
+		samplerate = info[0];
+		if (info[1] == 2) { //AV_CH_LAYOUT_STEREO
+			channeltype = AudioFormat.CHANNEL_OUT_STEREO;
+		}else { //AV_CH_LAYOUT_MONO and other
+			channeltype = AudioFormat.CHANNEL_OUT_MONO;
+		}
+		sampleformat = AudioFormat.ENCODING_PCM_16BIT;
+		minbufsize=AudioTrack.getMinBufferSize (samplerate, channeltype, sampleformat);
+		audioTrack = new AudioTrack(android.media.AudioManager.STREAM_MUSIC,samplerate,channeltype,
+				sampleformat,minbufsize*2,AudioTrack.MODE_STREAM);
 	}
 
 	@Override

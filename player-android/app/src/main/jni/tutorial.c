@@ -54,6 +54,9 @@ int					stop = -1;
 int 				scalebuffersize;
 pthread_mutex_t     mutex;
 
+pthread_mutex_t     mutex_queue;
+pthread_cond_t      cond_queue;
+
 typedef struct PacketQueue {
     AVPacketList *first_pkt, *last_pkt;
     int nb_packets;
@@ -67,6 +70,8 @@ int quit = 0;
 
 static void packet_queue_init(PacketQueue *q) {
     memset(q, 0, sizeof(PacketQueue));
+    q->mutex = &mutex_queue;
+    q->cond = &cond_queue;
     pthread_mutex_init(q->mutex, NULL);
     pthread_cond_init(q->cond, NULL);
 }
@@ -373,7 +378,7 @@ void decodeAndRender(JNIEnv *pEnv) {
                     fclose(fp);
                 }//*/
 				// Convert the image from its native format to RGBA
-				gettimeofday(&start,NULL);
+				//gettimeofday(&start,NULL);
 				#if 0
 				sws_scale
 				(
@@ -402,9 +407,9 @@ void decodeAndRender(JNIEnv *pEnv) {
 						  frameRGBA->data[0],frameRGBA->linesize[0],
 						  width,height);
 				#endif
-				gettimeofday(&end,NULL);
-				time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
-				LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
+				//gettimeofday(&end,NULL);
+				//time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+				//LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
                 /* save frame after scale to rgba file
                 if(i < 20){
                     FILE *fp;
@@ -435,13 +440,15 @@ void decodeAndRender(JNIEnv *pEnv) {
 					// count number of frames
 					++i;
 				}
+				av_free_packet(&packet);
 				pthread_mutex_unlock(&mutex);
 			}
 		}else if(packet.stream_index==audioStream) {
               packet_queue_put(&audioq, &packet);
-        }
-		// Free the packet that was allocated by av_read_frame
-		av_free_packet(&packet);
+        } else {
+		    // Free the packet that was allocated by av_read_frame
+		    av_free_packet(&packet);
+		}
 	}
 	LOGI("total No. of frames decoded and rendered %d", i);
 	finish(pEnv);
@@ -454,6 +461,7 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
     static AVFrame frame;
 
     int len1, data_size = 0;
+
 
     for(;;) {
         while(audio_pkt_size > 0) {
@@ -532,7 +540,7 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
         audio_buf_index += len1;
     }
     (*pEnv)->ReleaseByteArrayElements(pEnv, buffer, pcm, 0);
-    return audio_buf_index;
+    return pcmindex - pcm;
 }
 
 /**

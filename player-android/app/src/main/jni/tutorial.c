@@ -185,8 +185,17 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
     // Get a pointer to the codec context for the video stream
     vCodecCtx=formatCtx->streams[videoStream]->codec;
     // Find the decoder for the video stream
-    //pCodec=avcodec_find_decoder(vCodecCtx->codec_id);
-    pVideoCodec=avcodec_find_decoder_by_name("h264_mediacodec");
+    if(vCodecCtx->codec_id == AV_CODEC_ID_H264 ||
+       vCodecCtx->codec_id == AV_CODEC_ID_HEVC ||
+       vCodecCtx->codec_id == AV_CODEC_ID_MPEG4 ||
+       vCodecCtx->codec_id == AV_CODEC_ID_VP8 ||
+       vCodecCtx->codec_id == AV_CODEC_ID_VP9){
+        char codec_name[64] = {0};
+        sprintf(codec_name,"%s_mediacodec",avcodec_get_name(vCodecCtx->codec_id));
+        pVideoCodec=avcodec_find_decoder_by_name(codec_name);
+    }else{
+        pVideoCodec=avcodec_find_decoder(vCodecCtx->codec_id);
+    }
     if(pVideoCodec==NULL) {
         fprintf(stderr, "Unsupported codec!\n");
         return -1; // Codec not found

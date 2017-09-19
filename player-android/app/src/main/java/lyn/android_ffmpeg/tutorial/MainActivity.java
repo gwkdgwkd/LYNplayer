@@ -131,9 +131,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
 	@Override
 	public void onDestroy() {
+		Log.d(TAG, "onDestroy");
 		super.onDestroy();
-		handler.removeCallbacks(audioUpdateThread);
-		naStop();
+		System.exit(0);
 	}
 
 	@Override
@@ -166,6 +166,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	@Override
 	public void surfaceDestroyed(SurfaceHolder holder) {
 		Log.d(TAG, "surfaceDestroyed");
+		handler.removeCallbacks(audioUpdateThread);
 		naSetup(null, 0, 0);
 	}
 	

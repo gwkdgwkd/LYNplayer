@@ -279,6 +279,26 @@ jintArray naGetAudioInfo(JNIEnv *pEnv, jobject pObj) {
 	return lInfo;
 }
 
+void finish(JNIEnv *pEnv) {
+	pthread_mutex_destroy(&mutex);
+	if(stop != -1) {
+	    //unlock the bitmap
+	    AndroidBitmap_unlockPixels(pEnv, bitmap);
+	}
+	//av_free(buffer);  //why ?
+	av_free(scalebuffer);
+	// Free the RGB image
+	av_free(frameRGBA);
+	// Free the YUV frame
+	av_free(decodedFrame);
+	av_free(scaleFrame);
+	// Close the codec
+	avcodec_close(vCodecCtx);
+	avcodec_close(aCodecCtx);
+	// Close the video file
+	avformat_close_input(&formatCtx);
+}
+
 int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight) {
 	pthread_mutex_lock(&mutex);
 	if (0 != pSurface) {
@@ -295,6 +315,11 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
 	}
 
     if(pWidth == 0 || pHeight == 0) {
+        if(stop == -1) {
+            finish(pEnv);
+        } else {
+            stop = 1;
+        };
         pthread_mutex_unlock(&mutex);
         return -1;
     }
@@ -339,24 +364,6 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     return 0;
 }
 
-void finish(JNIEnv *pEnv) {
-	pthread_mutex_destroy(&mutex);
-	//unlock the bitmap
-	AndroidBitmap_unlockPixels(pEnv, bitmap);
-	av_free(buffer);
-	av_free(scalebuffer);
-	// Free the RGB image
-	av_free(frameRGBA);
-	// Free the YUV frame
-	av_free(decodedFrame);
-	av_free(scaleFrame);
-	// Close the codec
-	avcodec_close(vCodecCtx);
-	avcodec_close(aCodecCtx);
-	// Close the video file
-	avformat_close_input(&formatCtx);
-}
-
 void decodeAndRender(JNIEnv *pEnv) {
 	ANativeWindow_Buffer 	windowBuffer;
 	AVPacket        		packet;
@@ -367,6 +374,7 @@ void decodeAndRender(JNIEnv *pEnv) {
 	struct timeval end;
 	float time_use=0;
 	while(av_read_frame(formatCtx, &packet)>=0 && !stop) {
+		pthread_mutex_lock(&mutex);
 		// Is this a packet from the video stream?
 		if(packet.stream_index==videoStream) {
 			//gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
@@ -378,7 +386,6 @@ void decodeAndRender(JNIEnv *pEnv) {
 			//LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
 			// Did we get a video frame?
 			if(frameFinished) {
-				pthread_mutex_lock(&mutex);
                 /* save frame after decode to yuv file
                 if(i < 20){
                     FILE *fp;
@@ -459,14 +466,14 @@ void decodeAndRender(JNIEnv *pEnv) {
 					++i;
 				}
 				av_free_packet(&packet);
-				pthread_mutex_unlock(&mutex);
 			}
-		}else if(packet.stream_index==audioStream) {
-              packet_queue_put(&audioq, &packet);
-        } else {
-		    // Free the packet that was allocated by av_read_frame
-		    av_free_packet(&packet);
+		} else if (packet.stream_index==audioStream) {
+			packet_queue_put(&audioq, &packet);
+		} else {
+			// Free the packet that was allocated by av_read_frame
+			av_free_packet(&packet);
 		}
+		pthread_mutex_unlock(&mutex);
 	}
 	LOGI("total No. of frames decoded and rendered %d", i);
 	finish(pEnv);
@@ -627,6 +634,7 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	if ((*pVm)->GetEnv(pVm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
 		 return -1;
 	}
+
 	int index = 0;
 	int nmMax = 8;
 	JNINativeMethod nm[nmMax];

@@ -140,8 +140,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	public void surfaceChanged(SurfaceHolder holder, int format, int width,
 			int height) {
 		Log.d(TAG, "surfacechanged: " + width + ":" + height);
-		naSetSurface(holder.getSurface());
-		naSetup(width, height);
+		naSetup(holder.getSurface(), width, height);
 	}
 
 	@Override
@@ -167,15 +166,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	@Override
 	public void surfaceDestroyed(SurfaceHolder holder) {
 		Log.d(TAG, "surfaceDestroyed");
-		naSetSurface(null);
+		naSetup(null, 0, 0);
 	}
 	
 	private static native int naInit(String pFileName); 
 	private static native int[] naGetVideoRes();
 	private static native int[] naGetAudioInfo();
 	private static native int naGetPcmBuffer(byte[] pcm,int len);
-	private static native void naSetSurface(Surface pSurface);
-	private static native int naSetup(int pWidth, int pHeight);
+	private static native int naSetup(Surface pSurface,int pWidth, int pHeight);
 	private static native void naPlay();
 	private static native void naStop();
 

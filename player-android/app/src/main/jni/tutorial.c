@@ -35,6 +35,7 @@
 #define LOGI(...) __android_log_print(4, LOG_TAG, __VA_ARGS__);
 #define LOGE(...) __android_log_print(6, LOG_TAG, __VA_ARGS__);
 #define MAX_AUDIO_FRAME_SIZE 192000
+//#define USE_SWS_CTX 1
 
 ANativeWindow* 		window;
 char 				*videoFileName;
@@ -278,7 +279,7 @@ jintArray naGetAudioInfo(JNIEnv *pEnv, jobject pObj) {
 	return lInfo;
 }
 
-void naSetSurface(JNIEnv *pEnv, jobject pObj, jobject pSurface) {
+int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight) {
 	pthread_mutex_lock(&mutex);
 	if (0 != pSurface) {
         if(stop == 0){
@@ -292,43 +293,50 @@ void naSetSurface(JNIEnv *pEnv, jobject pObj, jobject pSurface) {
 		// release the native window
 		ANativeWindow_release(window);
 	}
-}
 
-jint naSetup(JNIEnv *pEnv, jobject pObj, int pWidth, int pHeight) {
+    if(pWidth == 0 || pHeight == 0) {
+        pthread_mutex_unlock(&mutex);
+        return -1;
+    }
+
 	width = pWidth;
-	height = pHeight;
+    height = pHeight;
 
-	//create a bitmap as the buffer for frameRGBA
-	bitmap = createBitmap(pEnv, pWidth, pHeight);
-	if (AndroidBitmap_lockPixels(pEnv, bitmap, &buffer) < 0)
-		return -1;
-	//get the scaling context
-	sws_ctx = sws_getContext (
-	        vCodecCtx->width,
-	        vCodecCtx->height,
-	        vCodecCtx->pix_fmt,
-	        pWidth,
-	        pHeight,
-	        AV_PIX_FMT_RGBA,
-	        SWS_BILINEAR,
-	        NULL,
-	        NULL,
-	        NULL
-	);
-	// Assign appropriate parts of bitmap to image planes in pFrameRGBA
-	// Note that pFrameRGBA is an AVFrame, but AVFrame is a superset
-	// of AVPicture
-	avpicture_fill((AVPicture *)frameRGBA, buffer, AV_PIX_FMT_RGBA,
-			pWidth, pHeight);
+    //create a bitmap as the buffer for frameRGBA
+    bitmap = createBitmap(pEnv, pWidth, pHeight);
+    if (AndroidBitmap_lockPixels(pEnv, bitmap, &buffer) < 0){
+        pthread_mutex_unlock(&mutex);
+        return -1;
+    }
+    #if USE_SWS_CTX //use libyuv
+    //get the scaling context
+    sws_ctx = sws_getContext (
+            vCodecCtx->width,
+            vCodecCtx->height,
+            vCodecCtx->pix_fmt,
+            pWidth,
+            pHeight,
+            AV_PIX_FMT_RGBA,
+            SWS_BILINEAR,
+            NULL,
+            NULL,
+            NULL
+    );
+    #endif
+    // Assign appropriate parts of bitmap to image planes in pFrameRGBA
+    // Note that pFrameRGBA is an AVFrame, but AVFrame is a superset
+    // of AVPicture
+    avpicture_fill((AVPicture *)frameRGBA, buffer, AV_PIX_FMT_RGBA,
+            pWidth, pHeight);
 
-	scalebuffersize = avpicture_get_size(AV_PIX_FMT_YUV420P, pWidth, pHeight);
-	if(scalebuffer != NULL){
-	    free(scalebuffer);
-	}
-	scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
-	avpicture_fill((AVPicture *)scaleFrame, scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
-	pthread_mutex_unlock(&mutex);
-	return 0;
+    scalebuffersize = avpicture_get_size(AV_PIX_FMT_YUV420P, pWidth, pHeight);
+    if(scalebuffer != NULL){
+        free(scalebuffer);
+    }
+    scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
+    avpicture_fill((AVPicture *)scaleFrame, scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
+    pthread_mutex_unlock(&mutex);
+    return 0;
 }
 
 void finish(JNIEnv *pEnv) {
@@ -389,7 +397,7 @@ void decodeAndRender(JNIEnv *pEnv) {
                 }//*/
 				// Convert the image from its native format to RGBA
 				//gettimeofday(&start,NULL);
-				#if 0
+				#if USE_SWS_CTX
 				sws_scale
 				(
 					sws_ctx,
@@ -619,42 +627,40 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	if ((*pVm)->GetEnv(pVm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
 		 return -1;
 	}
-	JNINativeMethod nm[8];
-	nm[0].name = "naInit";
-	nm[0].signature = "(Ljava/lang/String;)I";
-	nm[0].fnPtr = (void*)naInit;
+	int index = 0;
+	int nmMax = 8;
+	JNINativeMethod nm[nmMax];
+	nm[index].name = "naInit";
+	nm[index].signature = "(Ljava/lang/String;)I";
+	nm[index++].fnPtr = (void*)naInit;
 
-	nm[1].name = "naSetSurface";
-	nm[1].signature = "(Landroid/view/Surface;)V";
-	nm[1].fnPtr = (void*)naSetSurface;
+	nm[index].name = "naSetup";
+	nm[index].signature = "(Landroid/view/Surface;II)I";
+	nm[index++].fnPtr = (void*)naSetup;
 
-	nm[2].name = "naGetVideoRes";
-	nm[2].signature = "()[I";
-	nm[2].fnPtr = (void*)naGetVideoRes;
+	nm[index].name = "naGetVideoRes";
+	nm[index].signature = "()[I";
+	nm[index++].fnPtr = (void*)naGetVideoRes;
 
-	nm[3].name = "naGetAudioInfo";
-	nm[3].signature = "()[I";
-	nm[3].fnPtr = (void*)naGetAudioInfo;
+	nm[index].name = "naGetAudioInfo";
+	nm[index].signature = "()[I";
+	nm[index++].fnPtr = (void*)naGetAudioInfo;
 
-	nm[4].name = "naSetup";
-	nm[4].signature = "(II)I";
-	nm[4].fnPtr = (void*)naSetup;
+	nm[index].name = "naPlay";
+	nm[index].signature = "()V";
+	nm[index++].fnPtr = (void*)naPlay;
 
-	nm[5].name = "naPlay";
-	nm[5].signature = "()V";
-	nm[5].fnPtr = (void*)naPlay;
+	nm[index].name = "naStop";
+	nm[index].signature = "()V";
+	nm[index++].fnPtr = (void*)naStop;
 
-	nm[6].name = "naStop";
-	nm[6].signature = "()V";
-	nm[6].fnPtr = (void*)naStop;
-
-	nm[7].name = "naGetPcmBuffer";
-    nm[7].signature = "([BI)I";
-    nm[7].fnPtr = (void*)naGetPcmBuffer;
+	nm[index].name = "naGetPcmBuffer";
+	nm[index].signature = "([BI)I";
+	nm[index++].fnPtr = (void*)naGetPcmBuffer;
 
 	jclass cls = (*env)->FindClass(env, "lyn/android_ffmpeg/tutorial/MainActivity");
 	//Register methods with env->RegisterNatives.
-	(*env)->RegisterNatives(env, cls, nm, 8);
+	(*env)->RegisterNatives(env, cls, nm, index);
 	av_jni_set_java_vm(pVm, NULL);
 	return JNI_VERSION_1_6;
 }

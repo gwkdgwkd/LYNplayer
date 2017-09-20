@@ -3,14 +3,16 @@
 
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
-#include <jni.h>
 
 #include <sys/types.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 
-#define LOG_TAG "android-ffmpeg-tutorial02"
-#define LOGD(...) __android_log_print(5, LOG_TAG, __VA_ARGS__);
+#include "type.h"
+#include "audiodevice.h"
+
+
+typedef  int (*GetBuffer)(void**,size_t*);
 
 // engine interfaces
 static SLObjectItf engineObject = NULL;
@@ -36,13 +38,18 @@ static void *buffer;
 static size_t bufferSize;
 
 // this callback handler is called every time a buffer finishes playing
-void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context)
+void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *arg)
 {
     LOGD("playerCallback");
+    static get_pcm_buffer getpcm;
+    if(arg != NULL) {
+        getpcm = (get_pcm_buffer)arg;
+    }
     assert(bq == bqPlayerBufferQueue);
     bufferSize = 0;
-    //assert(NULL == context);
-    //getPCM(&buffer, &bufferSize);
+    //assert(NULL == arg);
+    //((int (*)(void**,size_t*))getpcm)(&buffer, &bufferSize);
+    getpcm(&buffer, &bufferSize);
     // for streaming playback, replace this test by logic to find and fill the next buffer
     if (NULL != buffer && 0 != bufferSize) {
         SLresult result;
@@ -171,21 +178,16 @@ void createBufferQueueAudioPlayer(int rate, int channel, int bitsPerSample)
     (void)result;
 }
 
-void play()
+void audioplay(void *arg)
 {
-    int rate, channel;
-
-    // 创建FFmpeg音频解码器
-    //createFFmpegAudioPlay(&rate, &channel);
-
     // 创建播放引擎
     createEngine();
 
     // 创建缓冲队列音频播放器
-    createBufferQueueAudioPlayer(rate, channel, SL_PCMSAMPLEFORMAT_FIXED_16);
+    createBufferQueueAudioPlayer(((audioArgsPtr)arg)->rate, ((audioArgsPtr)arg)->channels, SL_PCMSAMPLEFORMAT_FIXED_16);
 
     // 启动音频播放
-    bqPlayerCallback(bqPlayerBufferQueue, NULL);
+    bqPlayerCallback(bqPlayerBufferQueue, (void*)(((audioArgsPtr)arg)->pcm_callback));
 }
 
 // shut down the native audio system
@@ -215,7 +217,4 @@ void shutdown()
         engineObject = NULL;
         engineEngine = NULL;
     }
-
-    // 释放FFmpeg解码器相关资源
-    //releaseFFmpegAudioPlay();
 }

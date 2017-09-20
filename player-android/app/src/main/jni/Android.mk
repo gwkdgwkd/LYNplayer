@@ -34,7 +34,7 @@ include $(PREBUILT_SHARED_LIBRARY)
 # Program
 include $(CLEAR_VARS)
 LOCAL_MODULE    := tutorial
-LOCAL_SRC_FILES := tutorial.c audioplay.c
+LOCAL_SRC_FILES := tutorial.c audiodevice.c
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 LOCAL_LDLIBS := -llog -lz -ljnigraphics -landroid -lOpenSLES
 LOCAL_SHARED_LIBRARIES := avcodec avformat avutil swscale swresample yuv

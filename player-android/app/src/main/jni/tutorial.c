@@ -25,17 +25,18 @@
 #include <stdio.h>
 #include <pthread.h>
 
-#include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 
 #include <sys/time.h>
 
-#define LOG_TAG "android-ffmpeg-tutorial02"
-#define LOGI(...) __android_log_print(4, LOG_TAG, __VA_ARGS__);
-#define LOGE(...) __android_log_print(6, LOG_TAG, __VA_ARGS__);
+#include "type.h"
+#include "audiodevice.h"
+
 #define MAX_AUDIO_FRAME_SIZE 192000
 //#define USE_SWS_CTX 1
+
+int getPcm(void **pcm, size_t *pcmSize);
 
 ANativeWindow* 		window;
 char 				*videoFileName;
@@ -54,6 +55,7 @@ int 				width;
 int 				height;
 int					stop = -1;
 int 				scalebuffersize;
+struct audioArgs  audio_args;
 pthread_mutex_t     mutex;
 
 pthread_mutex_t     mutex_queue;
@@ -182,6 +184,9 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
     }
     avcodec_open2(aCodecCtx, pAudioCodec, &audioOptionsDict);
     packet_queue_init(&audioq);
+    audio_args.rate = aCodecCtx->sample_rate;
+    audio_args.channels = aCodecCtx->channels;
+    audio_args.pcm_callback = getPcm;
 
     // Get a pointer to the codec context for the video stream
     vCodecCtx=formatCtx->streams[videoStream]->codec;
@@ -522,7 +527,7 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
                 LOGI("frame.channels = %d \n", frame.channels);
                 LOGI("frame.channel_layout = %d \n", frame.channel_layout);
                 LOGI("frame.nb_samples = %d \n", frame.nb_samples);
-                */
+                //*/
                 if(frame.format != AV_SAMPLE_FMT_S16
                     || frame.channel_layout != codecCtx->channel_layout
                     || frame.sample_rate != codecCtx->sample_rate
@@ -544,6 +549,7 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
                                                         frame.sample_rate, AV_SAMPLE_FMT_S16, AV_ROUND_INF);
                     LOGI("swr convert ! \n");
                     LOGI("dst_nb_samples : %d \n", dst_nb_samples);
+                    LOGI("data_size : %d \n", data_size);
 
                     int len2 = swr_convert(swr_ctx, &audio_buf, dst_nb_samples,(const uint8_t**)frame.data, frame.nb_samples);
                     if (len2 < 0) {
@@ -612,14 +618,21 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
     return pcmindex - pcm;
 }
 
+int getPcm(void **pcm, size_t *pcmSize) {
+    static uint8_t audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
+    *pcmSize = audio_decode_frame(aCodecCtx, audio_buf, 0);
+    *pcm = audio_buf;
+}
+
 /**
  * start the video playback
  */
 void naPlay(JNIEnv *pEnv, jobject pObj) {
 	//create a new thread for video decode and render
-	pthread_t decodeThread;
+	pthread_t decodeThread,audioPlayThread;
 	stop = 0;
 	pthread_create(&decodeThread, NULL, decodeAndRender, NULL);
+	pthread_create(&audioPlayThread, NULL, audioplay, (void *)&audio_args);
 }
 
 /**

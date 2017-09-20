@@ -72,8 +72,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				audioTrack.play();
-				handler.post(audioUpdateThread);
+				//audioTrack.play();
+				//handler.post(audioUpdateThread);
 				naPlay();
 			}
 		});

@@ -35,6 +35,7 @@
 
 #define MAX_AUDIO_FRAME_SIZE 192000
 //#define USE_SWS_CTX 1
+//#define USE_AUDIO_TRACK 1
 
 int getPcm(void **pcm, size_t *pcmSize);
 
@@ -632,7 +633,9 @@ void naPlay(JNIEnv *pEnv, jobject pObj) {
 	pthread_t decodeThread,audioPlayThread;
 	stop = 0;
 	pthread_create(&decodeThread, NULL, decodeAndRender, NULL);
+	#ifndef USE_AUDIO_TRACK
 	pthread_create(&audioPlayThread, NULL, audioplay, (void *)&audio_args);
+	#endif
 }
 
 /**

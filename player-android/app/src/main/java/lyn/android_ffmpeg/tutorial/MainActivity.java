@@ -39,6 +39,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private AudioTrack audioTrack;
 	private int samplerate,channeltype,sampleformat,minbufsize;
 	private Handler handler = new Handler();
+	private boolean mUseAudioTrack = false;
 
 	private Runnable audioUpdateThread = new Runnable(){
 		public void run() {
@@ -65,15 +66,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		}
 		//copy input video file from assets folder to directory
 		Utils.copyAssets(this, videoFileName, FRAME_DUMP_FOLDER_PATH);
-		
+
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
 		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
 		btnStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				//audioTrack.play();
-				//handler.post(audioUpdateThread);
+				if(mUseAudioTrack) {
+					audioTrack.play();
+					handler.post(audioUpdateThread);
+				}
 				naPlay();
 			}
 		});
@@ -148,19 +151,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		Log.d(TAG, "surfaceCreated");
 		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
 		setSurfaceSize();
-
-		int[] info = naGetAudioInfo();
-		Log.d(TAG, "info rate " + info[0] + ": channels " + info[1] + ": fmt " + info[2]);
-		samplerate = info[0];
-		if (info[1] == 2) { //AV_CH_LAYOUT_STEREO
-			channeltype = AudioFormat.CHANNEL_OUT_STEREO;
-		}else { //AV_CH_LAYOUT_MONO and other
-			channeltype = AudioFormat.CHANNEL_OUT_MONO;
+		if(mUseAudioTrack) {
+			int[] info = naGetAudioInfo();
+			Log.d(TAG, "info rate " + info[0] + ": channels " + info[1] + ": fmt " + info[2]);
+			samplerate = info[0];
+			if (info[1] == 2) { //AV_CH_LAYOUT_STEREO
+				channeltype = AudioFormat.CHANNEL_OUT_STEREO;
+			} else { //AV_CH_LAYOUT_MONO and other
+				channeltype = AudioFormat.CHANNEL_OUT_MONO;
+			}
+			sampleformat = AudioFormat.ENCODING_PCM_16BIT;
+			minbufsize = AudioTrack.getMinBufferSize(samplerate, channeltype, sampleformat);
+			audioTrack = new AudioTrack(android.media.AudioManager.STREAM_MUSIC, samplerate, channeltype,
+					sampleformat, minbufsize * 2, AudioTrack.MODE_STREAM);
 		}
-		sampleformat = AudioFormat.ENCODING_PCM_16BIT;
-		minbufsize=AudioTrack.getMinBufferSize (samplerate, channeltype, sampleformat);
-		audioTrack = new AudioTrack(android.media.AudioManager.STREAM_MUSIC,samplerate,channeltype,
-				sampleformat,minbufsize*2,AudioTrack.MODE_STREAM);
 	}
 
 	@Override

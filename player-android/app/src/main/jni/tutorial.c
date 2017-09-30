@@ -59,26 +59,22 @@ int 				scalebuffersize;
 struct audioArgs  audio_args;
 pthread_mutex_t     mutex;
 
-pthread_mutex_t     mutex_queue;
-pthread_cond_t      cond_queue;
-
 typedef struct PacketQueue {
     AVPacketList *first_pkt, *last_pkt;
     int nb_packets;
     int size;
-    pthread_mutex_t *mutex;
-    pthread_cond_t *cond;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
 } PacketQueue;
 
 PacketQueue audioq;
+PacketQueue videoq;
 int quit = 0;
 
 static void packet_queue_init(PacketQueue *q) {
     memset(q, 0, sizeof(PacketQueue));
-    q->mutex = &mutex_queue;
-    q->cond = &cond_queue;
-    pthread_mutex_init(q->mutex, NULL);
-    pthread_cond_init(q->cond, NULL);
+    pthread_mutex_init(&q->mutex, NULL);
+    pthread_cond_init(&q->cond, NULL);
 }
 
 static int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
@@ -92,7 +88,7 @@ static int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     pkt1->pkt = *pkt;
     pkt1->next = NULL;
 
-    pthread_mutex_lock(q->mutex);
+    pthread_mutex_lock(&q->mutex);
 
     if (!q->last_pkt)
         q->first_pkt = pkt1;
@@ -101,9 +97,9 @@ static int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     q->last_pkt = pkt1;
     q->nb_packets++;
     q->size += pkt1->pkt.size;
-    pthread_cond_signal(q->cond);
+    pthread_cond_signal(&q->cond);
 
-    pthread_mutex_unlock(q->mutex);
+    pthread_mutex_unlock(&q->mutex);
     return 0;
 }
 
@@ -112,7 +108,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     AVPacketList *pkt1;
     int ret;
 
-    pthread_mutex_lock(q->mutex);
+    pthread_mutex_lock(&q->mutex);
 
     for(;;) {
         if(quit) {
@@ -135,10 +131,10 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
             ret = 0;
             break;
         } else {
-            pthread_cond_wait(q->cond, q->mutex);
+            pthread_cond_wait(&q->cond, &q->mutex);
         }
     }
-    pthread_mutex_unlock(q->mutex);
+    pthread_mutex_unlock(&q->mutex);
     return ret;
 }
 
@@ -303,6 +299,8 @@ void finish(JNIEnv *pEnv) {
 	avcodec_close(aCodecCtx);
 	// Close the video file
 	avformat_close_input(&formatCtx);
+	// shut down the native audio system
+	shutdown();
 }
 
 int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight) {
@@ -370,48 +368,48 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     return 0;
 }
 
-void decodeAndRender(JNIEnv *pEnv) {
+void videoplay(JNIEnv *pEnv) {
 	ANativeWindow_Buffer 	windowBuffer;
 	AVPacket        		packet;
 	int 					i=0;
 	int            			frameFinished;
-	int 					lineCnt;
-	struct timeval start;
-	struct timeval end;
-	float time_use=0;
-	while(av_read_frame(formatCtx, &packet)>=0 && !stop) {
-		pthread_mutex_lock(&mutex);
-		// Is this a packet from the video stream?
-		if(packet.stream_index==videoStream) {
-			//gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
-			// Decode video frame
-			avcodec_decode_video2(vCodecCtx, decodedFrame, &frameFinished,
-			   &packet);
-			//gettimeofday(&end,NULL);
-			//time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
-			//LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
-			// Did we get a video frame?
-			if(frameFinished) {
-                /* save frame after decode to yuv file
-                if(i < 20){
-                    FILE *fp;
-                    int j;
-                    fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.yuv","ab");
-                    for (j = 0; j<vCodecCtx->height; j++) {
-                        fwrite(decodedFrame->data[0] + j*decodedFrame->linesize[0], vCodecCtx->width, 1, fp);
-                    }
-                    for (j = 0; j<vCodecCtx->height/2; j++) {
-                        fwrite(decodedFrame->data[1] + j*decodedFrame->linesize[1], vCodecCtx->width/2, 1, fp);
-                    }
-                    for (j = 0; j<vCodecCtx->height/2; j++){
-                        fwrite(decodedFrame->data[2] + j*decodedFrame->linesize[2], vCodecCtx->width/2, 1, fp);
-                    }
-                    fclose(fp);
-                }//*/
-				// Convert the image from its native format to RGBA
-				//gettimeofday(&start,NULL);
-				#if USE_SWS_CTX
-				sws_scale
+    //struct timeval start;
+    //struct timeval end;
+    //float time_use=0;
+    while(!stop) {
+        if(packet_queue_get(&videoq, &packet, 1) < 0) {
+            // means we quit getting packets
+            break;
+        }
+        //gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
+        // Decode video frame
+        avcodec_decode_video2(vCodecCtx, decodedFrame, &frameFinished, &packet);
+        //gettimeofday(&end,NULL);
+        //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+        //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
+        pthread_mutex_lock(&mutex);
+        // Did we get a video frame?
+        if(frameFinished && !stop) {
+            /* save frame after decode to yuv file
+            if(i < 20){
+                FILE *fp;
+                int j;
+                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.yuv","ab");
+                for (j = 0; j<vCodecCtx->height; j++) {
+                    fwrite(decodedFrame->data[0] + j*decodedFrame->linesize[0], vCodecCtx->width, 1, fp);
+                }
+                for (j = 0; j<vCodecCtx->height/2; j++) {
+                    fwrite(decodedFrame->data[1] + j*decodedFrame->linesize[1], vCodecCtx->width/2, 1, fp);
+                }
+                for (j = 0; j<vCodecCtx->height/2; j++){
+                    fwrite(decodedFrame->data[2] + j*decodedFrame->linesize[2], vCodecCtx->width/2, 1, fp);
+                }
+                fclose(fp);
+            }//*/
+            // Convert the image from its native format to RGBA
+            //gettimeofday(&start,NULL);
+#if USE_SWS_CTX
+            sws_scale
 				(
 					sws_ctx,
 					(uint8_t const * const *)decodedFrame->data,
@@ -421,8 +419,8 @@ void decodeAndRender(JNIEnv *pEnv) {
 					frameRGBA->data,
 					frameRGBA->linesize
 				);
-				#else
-				I420Scale(decodedFrame->data[0],decodedFrame->linesize[0],
+#else
+            I420Scale(decodedFrame->data[0],decodedFrame->linesize[0],
 						  decodedFrame->data[1],decodedFrame->linesize[1],
 						  decodedFrame->data[2],decodedFrame->linesize[2],
 						  vCodecCtx->width,vCodecCtx->height,
@@ -431,58 +429,66 @@ void decodeAndRender(JNIEnv *pEnv) {
 						  scaleFrame->data[2],scaleFrame->linesize[2],
 						  width,height,kFilterNone);
 
-				//why not I420ToRGBA？ ijkplayer uses I420ToABGR
-				I420ToABGR(scaleFrame->data[0],scaleFrame->linesize[0],
+            //why not I420ToRGBA？ ijkplayer uses I420ToABGR
+            I420ToABGR(scaleFrame->data[0],scaleFrame->linesize[0],
 						  scaleFrame->data[1],scaleFrame->linesize[1],
 						  scaleFrame->data[2],scaleFrame->linesize[2],
 						  frameRGBA->data[0],frameRGBA->linesize[0],
 						  width,height);
-				#endif
-				//gettimeofday(&end,NULL);
-				//time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
-				//LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
-                /* save frame after scale to rgba file
-                if(i < 20){
-                    FILE *fp;
-                    fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
-                    for (int j = 0; j<height; j++) {
-                        fwrite(frameRGBA->data[0] + j*frameRGBA->linesize[0], width*4, 1, fp);
+#endif
+            //gettimeofday(&end,NULL);
+            //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+            //LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
+            /* save frame after scale to rgba file
+            if(i < 20){
+                FILE *fp;
+                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
+                for (int j = 0; j<height; j++) {
+                    fwrite(frameRGBA->data[0] + j*frameRGBA->linesize[0], width*4, 1, fp);
+                }
+                fclose(fp);
+            }//*/
+            // lock the window buffer
+            if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
+                LOGE("cannot lock window");
+            } else {
+                // draw the frame on buffer
+                LOGI("copy buffer %d:%d:%d", width, height, width*height*4);
+                LOGI("window buffer: %d:%d:%d", windowBuffer.width,
+                    windowBuffer.height, windowBuffer.stride);
+                if(width == windowBuffer.width && height == windowBuffer.height){
+                    //memcpy(windowBuffer.bits, buffer,  width * height * 4);
+                    for (int h = 0; h < height; h++){
+                        memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
+                            buffer + h * frameRGBA->linesize[0],width*4);
                     }
-                    fclose(fp);
-                }//*/
-				// lock the window buffer
-				if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
-					LOGE("cannot lock window");
-				} else {
-					// draw the frame on buffer
-					LOGI("copy buffer %d:%d:%d", width, height, width*height*4);
-					LOGI("window buffer: %d:%d:%d", windowBuffer.width,
-							windowBuffer.height, windowBuffer.stride);
-					if(width == windowBuffer.width && height == windowBuffer.height){
-						//memcpy(windowBuffer.bits, buffer,  width * height * 4);
-						for (int h = 0; h < height; h++){
-							memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
-								buffer + h * frameRGBA->linesize[0],
-								width*4);
-						}
-					}
-					// unlock the window buffer and post it to display
-					ANativeWindow_unlockAndPost(window);
-					// count number of frames
-					++i;
-				}
-				av_free_packet(&packet);
-			}
+                }
+                // unlock the window buffer and post it to display
+                ANativeWindow_unlockAndPost(window);
+                // count number of frames
+                ++i;
+            }
+            av_free_packet(&packet);
+        }
+        pthread_mutex_unlock(&mutex);
+	}
+	LOGI("total No. of frames decoded and rendered %d", i);
+	finish(pEnv);
+}
+
+void readPkt() {
+	AVPacket        		packet;
+	while(av_read_frame(formatCtx, &packet)>=0 && !stop) {
+		// Is this a packet from the video stream?
+		if(packet.stream_index==videoStream) {
+            packet_queue_put(&videoq, &packet);
 		} else if (packet.stream_index==audioStream) {
 			packet_queue_put(&audioq, &packet);
 		} else {
 			// Free the packet that was allocated by av_read_frame
 			av_free_packet(&packet);
 		}
-		pthread_mutex_unlock(&mutex);
 	}
-	LOGI("total No. of frames decoded and rendered %d", i);
-	finish(pEnv);
 }
 
 static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int buf_size) {
@@ -548,9 +554,9 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
                 if(swr_ctx) {
                     int dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, frame.sample_rate) + frame.nb_samples,
                                                         frame.sample_rate, AV_SAMPLE_FMT_S16, AV_ROUND_INF);
-                    LOGI("swr convert ! \n");
-                    LOGI("dst_nb_samples : %d \n", dst_nb_samples);
-                    LOGI("data_size : %d \n", data_size);
+                    //LOGI("swr convert ! \n");
+                    //LOGI("dst_nb_samples : %d \n", dst_nb_samples);
+                    //LOGI("data_size : %d \n", data_size);
 
                     int len2 = swr_convert(swr_ctx, &audio_buf, dst_nb_samples,(const uint8_t**)frame.data, frame.nb_samples);
                     if (len2 < 0) {
@@ -630,12 +636,13 @@ int getPcm(void **pcm, size_t *pcmSize) {
  */
 void naPlay(JNIEnv *pEnv, jobject pObj) {
 	//create a new thread for video decode and render
-	pthread_t decodeThread,audioPlayThread;
+	pthread_t readPktThread,audioPlayThread,vedioPlayThread;
 	stop = 0;
-	pthread_create(&decodeThread, NULL, decodeAndRender, NULL);
+	pthread_create(&readPktThread, NULL, readPkt, NULL);
 	#ifndef USE_AUDIO_TRACK
 	pthread_create(&audioPlayThread, NULL, audioplay, (void *)&audio_args);
 	#endif
+	pthread_create(&vedioPlayThread, NULL, videoplay, NULL);
 }
 
 /**

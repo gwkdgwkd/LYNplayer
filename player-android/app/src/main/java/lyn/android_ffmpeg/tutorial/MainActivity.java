@@ -25,7 +25,7 @@ import android.media.AudioFormat;
 import android.os.Handler;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
-	private static final String TAG = "android-ffmpeg-tutorial02";
+	private static final String TAG = "android-ffmpeg-tutorial04";
 	private static final String FRAME_DUMP_FOLDER_PATH = Environment.getExternalStorageDirectory() 
 			+ File.separator + "android-ffmpeg-tutorial02";
 	
@@ -40,6 +40,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private int samplerate,channeltype,sampleformat,minbufsize;
 	private Handler handler = new Handler();
 	private boolean mUseAudioTrack = false;
+	private float Ratio;
 
 	private Runnable audioUpdateThread = new Runnable(){
 		public void run() {
@@ -67,6 +68,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		//copy input video file from assets folder to directory
 		Utils.copyAssets(this, videoFileName, FRAME_DUMP_FOLDER_PATH);
 
+		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
 		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
@@ -110,9 +112,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		int[] res = naGetVideoRes();
 		Log.d(TAG, "res width " + res[0] + ": height " + res[1]);
 		int[] screenRes = getScreenRes();
+		Log.d(TAG, "screenRes width " + screenRes[0] + ": height " + screenRes[1]);
 		int width, height;
 		float widthScaledRatio = screenRes[0]*1.0f/res[0];
 		float heightScaledRatio = screenRes[1]*1.0f/res[1];
+		Ratio = (float)res[0]/(float)res[1];
 		if (widthScaledRatio > heightScaledRatio) {
 			//use heightScaledRatio
 			width = (int) (res[0]*heightScaledRatio);
@@ -129,6 +133,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	@Override
 	public void onConfigurationChanged(Configuration newConfig) {
 		super.onConfigurationChanged(newConfig);
+		Log.d(TAG, "onConfigurationChanged");
 		setSurfaceSize();
 	}
 
@@ -143,13 +148,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	public void surfaceChanged(SurfaceHolder holder, int format, int width,
 			int height) {
 		Log.d(TAG, "surfacechanged: " + width + ":" + height);
-		naSetup(holder.getSurface(), width, height);
+		if((float)(Math.round(((float)width/(float)height)*100))/100 == (float)(Math.round(Ratio*100))/100) {
+			naSetup(holder.getSurface(), width, height);
+		}else{
+			Log.d(TAG, "Ratio: " + Ratio);
+		}
 	}
 
 	@Override
 	public void surfaceCreated(SurfaceHolder holder) {
 		Log.d(TAG, "surfaceCreated");
-		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
 		setSurfaceSize();
 		if(mUseAudioTrack) {
 			int[] info = naGetAudioInfo();

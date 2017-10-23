@@ -1,75 +1,7 @@
-// tutorial02.c
-// A pedagogical video player that will stream through every video frame as fast as it can.
-//
-// This tutorial was written by Stephen Dranger (dranger@gmail.com).
-//
-// Code based on FFplay, Copyright (c) 2003 Fabrice Bellard,
-// and a tutorial by Martin Bohme (boehme@inb.uni-luebeckREMOVETHIS.de)
-// Tested on Gentoo, CVS version 5/01/07 compiled with GCC 4.1.1
-//
-// The code is modified so that it can be compiled to a shared library and run on Android
-//
-// The code play the video stream on your screen
-//
-// Feipeng Liu (http://www.roman10.net/)
-// Aug 2013
-
-
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
-#include <libavutil/pixfmt.h>
-#include <libswresample/swresample.h>
-#include "libyuv.h"
-
-#include <stdio.h>
-#include <pthread.h>
-
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
-
-#include <sys/time.h>
-
-#include "type.h"
-#include "audiodevice.h"
-
-#define MAX_AUDIO_FRAME_SIZE 192000
-//#define USE_SWS_CTX 1
-//#define USE_AUDIO_TRACK 1
-
-int getPcm(void **pcm, size_t *pcmSize);
+#include "tutorial.h"
 
 ANativeWindow* 		window;
-char 				*videoFileName;
-AVFormatContext 	*formatCtx = NULL;
-int 				videoStream,audioStream;
-AVCodecContext  	*vCodecCtx = NULL;
-AVCodecContext  	*aCodecCtx = NULL;
-AVFrame         	*decodedFrame = NULL;
-AVFrame         	*scaleFrame = NULL;
-AVFrame         	*frameRGBA = NULL;
 jobject				bitmap;
-void*				buffer;
-void*				scalebuffer;
-struct SwsContext   *sws_ctx = NULL;
-int 				width;
-int 				height;
-int					stop = -1;
-int 				scalebuffersize;
-struct audioArgs  audio_args;
-pthread_mutex_t     mutex;
-
-typedef struct PacketQueue {
-    AVPacketList *first_pkt, *last_pkt;
-    int nb_packets;
-    int size;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-} PacketQueue;
-
-PacketQueue audioq;
-PacketQueue videoq;
-int quit = 0;
 
 static void packet_queue_init(PacketQueue *q) {
     memset(q, 0, sizeof(PacketQueue));
@@ -111,7 +43,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     pthread_mutex_lock(&q->mutex);
 
     for(;;) {
-        if(quit) {
+        if(global_video_state->quit) {
             ret = -1;
             break;
         }
@@ -138,83 +70,349 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     return ret;
 }
 
-jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
+int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeight, int frameId) {
+    VideoPicture *vp;
+    /* wait until we have space for a new pic */
+    pthread_mutex_lock(&is->pictq_mutex);
+    while(is->pictq_size >= VIDEO_PICTURE_QUEUE_SIZE &&	!is->quit) {
+        pthread_cond_wait(&is->pictq_cond, &is->pictq_mutex);
+    }
+    pthread_mutex_unlock(&is->pictq_mutex);
+    if(is->quit)
+        return -1;
+    // windex is set to 0 initially
+    vp = &is->pictq[is->pictq_windex];
+    vp->bmp = pFrame;
+    vp->width = frameWidth;
+    vp->height = frameHeight;
+    vp->id = frameId;
+    /* now we inform our display thread that we have a pic ready */
+    if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
+        is->pictq_windex = 0;
+    }
+    pthread_mutex_lock(&is->pictq_mutex);
+    is->pictq_size++;
+    pthread_cond_signal(&is->pictq_cond);
+    pthread_mutex_unlock(&is->pictq_mutex);
+    return 0;
+}
+
+void videoDecodeThread(void *arg) {
+	AVPacket        		packet;
+	AVFrame         	    *decodedFrame = NULL;
+	int 					i=0;
+	int            			frameFinished;
+    //struct timeval start;
+    //struct timeval end;
+    //float time_use=0;
+    VideoState *is = (VideoState *)arg;
+    decodedFrame = av_frame_alloc();
+
+    while(!is->stop) {
+        if(packet_queue_get(&is->videoq, &packet, 1) < 0) {
+            // means we quit getting packets
+            break;
+        }
+        //gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
+        // Decode video frame
+        avcodec_decode_video2(is->vCodecCtx, decodedFrame, &frameFinished, &packet);
+        //gettimeofday(&end,NULL);
+        //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+        //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
+        // Did we get a video frame?
+        if(frameFinished && !is->stop) {
+            /* save frame after decode to yuv file
+            if(i < 20){
+                FILE *fp;
+                int j;
+                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.yuv","ab");
+                for (j = 0; j<is->vCodecCtx->height; j++) {
+                    fwrite(decodedFrame->data[0] + j*decodedFrame->linesize[0], is->vCodecCtx->width, 1, fp);
+                }
+                for (j = 0; j<is->vCodecCtx->height/2; j++) {
+                    fwrite(decodedFrame->data[1] + j*decodedFrame->linesize[1], is->vCodecCtx->width/2, 1, fp);
+                }
+                for (j = 0; j<is->vCodecCtx->height/2; j++){
+                    fwrite(decodedFrame->data[2] + j*decodedFrame->linesize[2], is->vCodecCtx->width/2, 1, fp);
+                }
+                fclose(fp);
+            }//*/
+            // Convert the image from its native format to RGBA
+            //gettimeofday(&start,NULL);
+            pthread_mutex_lock(&is->decode_mutex);
+#if USE_SWS_CTX
+            sws_scale
+				(
+					is->sws_ctx,
+					(uint8_t const * const *)decodedFrame->data,
+					decodedFrame->linesize,
+					0,
+					is->vCodecCtx->height,
+					is->frameRGBA->data,
+					is->frameRGBA->linesize
+				);
+#else
+            I420Scale(decodedFrame->data[0],decodedFrame->linesize[0],
+						  decodedFrame->data[1],decodedFrame->linesize[1],
+						  decodedFrame->data[2],decodedFrame->linesize[2],
+						  is->vCodecCtx->width,is->vCodecCtx->height,
+						  is->scaleFrame->data[0],is->scaleFrame->linesize[0],
+						  is->scaleFrame->data[1],is->scaleFrame->linesize[1],
+						  is->scaleFrame->data[2],is->scaleFrame->linesize[2],
+						  is->width,is->height,kFilterNone);
+            //why not I420ToRGBA？ ijkplayer uses I420ToABGR
+            I420ToABGR(is->scaleFrame->data[0],is->scaleFrame->linesize[0],
+						  is->scaleFrame->data[1],is->scaleFrame->linesize[1],
+						  is->scaleFrame->data[2],is->scaleFrame->linesize[2],
+						  is->frameRGBA->data[0],is->frameRGBA->linesize[0],
+						  is->width,is->height);
+#endif
+            //gettimeofday(&end,NULL);
+            //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
+            //LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
+            /* save frame after scale to rgba file
+            if(i < 20){
+                FILE *fp;
+                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
+                for (int j = 0; j < is->height; j++) {
+                    fwrite(is->frameRGBA->data[0] + j*is->frameRGBA->linesize[0], is->width*4, 1, fp);
+                }
+                fclose(fp);
+            }//*/
+            if(queue_picture(is, is->frameRGBA,is->width,is->height,i) < 0) {
+                break;
+            }
+            pthread_mutex_unlock(&is->decode_mutex);
+            i++;
+            av_free_packet(&packet);
+        }
+	}
+	av_free(decodedFrame);
+	LOGI("total No. of frames decoded %d", i);
+}
+
+void finish(JNIEnv *pEnv) {
+    VideoState *is = global_video_state;
+
+	pthread_mutex_destroy(&is->mutex);
+	pthread_cond_destroy(&is->cond);
+	if(is->stop != -1) {
+	    //unlock the bitmap
+	    AndroidBitmap_unlockPixels(pEnv, bitmap);
+	}
+	//av_free(buffer);  //why ?
+	av_free(is->scalebuffer);
+	// Free the RGB image
+	av_free(is->frameRGBA);
+	// Free the YUV frame
+	//av_free(decodedFrame);
+	av_free(is->scaleFrame);
+	// Close the codec
+	avcodec_close(is->vCodecCtx);
+	avcodec_close(is->aCodecCtx);
+	// Close the video file
+	avformat_close_input(&is->pFormatCtx);
+	// shut down the native audio system
+	shutdown();
+}
+
+void videoDisplayThread(JNIEnv *pEnv) {
+	ANativeWindow_Buffer 	windowBuffer;
+	VideoPicture *vp;
+    int i = 0;
+    VideoState *is = global_video_state;
+
+    while(!is->stop) {
+        /* wait until we have a pic */
+        pthread_mutex_lock(&is->pictq_mutex);
+        while(is->pictq_size < 1 && !is->quit) {
+            pthread_cond_wait(&is->pictq_cond, &is->pictq_mutex);
+        }
+        pthread_mutex_unlock(&is->pictq_mutex);
+        vp = &is->pictq[is->pictq_rindex];
+        if(!vp->bmp) {
+            LOGE("picture is NULL");
+            break;
+        }
+
+        pthread_mutex_lock(&is->display_mutex);
+        // lock the window buffer
+        if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
+            LOGE("cannot lock window");
+        } else {
+            float tmp = (float)windowBuffer.width/(float)windowBuffer.height;
+            if(tmp - is->ratio > 0.009){
+                if(++is->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE) {
+                    is->pictq_rindex = 0;
+                }
+                LOGD("throw frame %d,because windowBuffer's ratio unreasonable",vp->id);
+                pthread_mutex_lock(&is->pictq_mutex);
+                is->pictq_size--;
+                pthread_cond_signal(&is->pictq_cond);
+                pthread_mutex_unlock(&is->pictq_mutex);
+                ANativeWindow_unlockAndPost(window);
+                pthread_mutex_unlock(&is->display_mutex);
+                continue;
+            }
+
+            // draw the frame on buffer
+            LOGI("copy buffer %d:%d:%d", is->width, is->height, is->width*is->height*4);
+            LOGI("window buffer: %d:%d:%d", windowBuffer.width,
+                windowBuffer.height, windowBuffer.stride);
+            if(is->width == windowBuffer.width && is->height == windowBuffer.height
+               && is->width == vp->width && is->height == vp->height){
+                //memcpy(windowBuffer.bits, buffer,  is->width * is->height * 4);
+                for (int h = 0; h < is->height; h++){
+                    memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
+                        vp->bmp->data[0] + h * vp->bmp->linesize[0],is->width*4);
+                }
+            } else {
+                LOGD("throw frame %d,because vp's width and height unreasonable",vp->id);
+            }
+            // unlock the window buffer and post it to display
+            ANativeWindow_unlockAndPost(window);
+            /* update queue for next picture! */
+            if(++is->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE) {
+                is->pictq_rindex = 0;
+            }
+            pthread_mutex_lock(&is->pictq_mutex);
+            is->pictq_size--;
+            pthread_cond_signal(&is->pictq_cond);
+            pthread_mutex_unlock(&is->pictq_mutex);
+            // count number of frames
+            ++i;
+        }
+        pthread_mutex_unlock(&is->display_mutex);
+	}
+	LOGI("total No. of frames rendered %d", i);
+	finish(pEnv);
+}
+
+int readPacketThread(void *arg) {
     AVCodec         *pVideoCodec = NULL;
     AVCodec         *pAudioCodec = NULL;
     int 			i;
     AVDictionary    *videoOptionsDict = NULL;
     AVDictionary    *audioOptionsDict = NULL;
+    AVPacket        packet;
 
-    videoFileName = (char *)(*pEnv)->GetStringUTFChars(pEnv, pFileName, NULL);
-    LOGI("video file name is %s", videoFileName);
+    AVFormatContext *pFormatCtx = NULL;
+
+    VideoState *is = (VideoState *)arg;
+    global_video_state = is;
+    is->init = 0;
+    is->videoStream = -1;
+    is->stop = -1;
+
     // Register all formats and codecs
     av_register_all();
     // Open video file
-    if(avformat_open_input(&formatCtx, videoFileName, NULL, NULL)!=0)
+    if(avformat_open_input(&pFormatCtx, is->filename, NULL, NULL)!=0)
         return -1; // Couldn't open file
+    is->pFormatCtx = pFormatCtx;
     // Retrieve stream information
-    if(avformat_find_stream_info(formatCtx, NULL)<0)
+    if(avformat_find_stream_info(pFormatCtx, NULL)<0)
         return -1; // Couldn't find stream information
     // Dump information about file onto standard error
-    av_dump_format(formatCtx, 0, videoFileName, 0);
+    av_dump_format(pFormatCtx, 0, is->filename, 0);
     // Find the first video stream
-    videoStream=-1;
-    audioStream=-1;
-    for(i=0; i<formatCtx->nb_streams; i++) {
-        if(formatCtx->streams[i]->codec->codec_type==AVMEDIA_TYPE_VIDEO && videoStream < 0) {
-            videoStream=i;
+
+    for(i = 0; i < pFormatCtx->nb_streams; i++) {
+        if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO && is->videoStream < 0) {
+            is->videoStream = i;
         }
-        if(formatCtx->streams[i]->codec->codec_type==AVMEDIA_TYPE_AUDIO && audioStream < 0) {
-            audioStream=i;
+        if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO && is->audioStream < 0) {
+            is->audioStream = i;
         }
     }
-    if(videoStream==-1)
+    if(is->videoStream == -1)
         return -1; // Didn't find a video stream
-    if(audioStream==-1)
+    if(is->audioStream == -1)
         return -1;
 
-    aCodecCtx=formatCtx->streams[audioStream]->codec;
-    pAudioCodec = avcodec_find_decoder(aCodecCtx->codec_id);
+    is->aCodecCtx=pFormatCtx->streams[is->audioStream]->codec;
+    pAudioCodec = avcodec_find_decoder(is->aCodecCtx->codec_id);
     if(!pAudioCodec) {
         fprintf(stderr, "Unsupported codec!\n");
         return -1;
     }
-    avcodec_open2(aCodecCtx, pAudioCodec, &audioOptionsDict);
-    packet_queue_init(&audioq);
-    audio_args.rate = aCodecCtx->sample_rate;
-    audio_args.channels = aCodecCtx->channels;
-    audio_args.pcm_callback = getPcm;
+    avcodec_open2(is->aCodecCtx, pAudioCodec, &audioOptionsDict);
+    packet_queue_init(&is->audioq);
+        //audio_args.rate = is->aCodecCtx->sample_rate;
+        //audio_args.channels = is->aCodecCtx->channels;
+        //audio_args.pcm_callback = getPcm;
+    is->audio_st = pFormatCtx->streams[is->audioStream];
+    is->audio_buf_size = 0;
+    is->audio_buf_index = 0;
+    memset(&is->audio_pkt, 0, sizeof(is->audio_pkt));
 
     // Get a pointer to the codec context for the video stream
-    vCodecCtx=formatCtx->streams[videoStream]->codec;
+    is->vCodecCtx=pFormatCtx->streams[is->videoStream]->codec;
     // Find the decoder for the video stream
-    if(vCodecCtx->codec_id == AV_CODEC_ID_H264 ||
-       vCodecCtx->codec_id == AV_CODEC_ID_HEVC ||
-       vCodecCtx->codec_id == AV_CODEC_ID_MPEG4 ||
-       vCodecCtx->codec_id == AV_CODEC_ID_VP8 ||
-       vCodecCtx->codec_id == AV_CODEC_ID_VP9){
+    if(is->vCodecCtx->codec_id == AV_CODEC_ID_H264 ||
+       is->vCodecCtx->codec_id == AV_CODEC_ID_HEVC ||
+       is->vCodecCtx->codec_id == AV_CODEC_ID_MPEG4 ||
+       is->vCodecCtx->codec_id == AV_CODEC_ID_VP8 ||
+       is->vCodecCtx->codec_id == AV_CODEC_ID_VP9){
         char codec_name[64] = {0};
-        sprintf(codec_name,"%s_mediacodec",avcodec_get_name(vCodecCtx->codec_id));
+        sprintf(codec_name,"%s_mediacodec",avcodec_get_name(is->vCodecCtx->codec_id));
         pVideoCodec=avcodec_find_decoder_by_name(codec_name);
     }else{
-        pVideoCodec=avcodec_find_decoder(vCodecCtx->codec_id);
+        pVideoCodec=avcodec_find_decoder(is->vCodecCtx->codec_id);
     }
     if(pVideoCodec==NULL) {
         fprintf(stderr, "Unsupported codec!\n");
         return -1; // Codec not found
     }
+    is->ratio = (float)is->vCodecCtx->width / (float)is->vCodecCtx->height;
+    is->init = 1;
     // Open codec
-    if(avcodec_open2(vCodecCtx, pVideoCodec, &videoOptionsDict)<0)
+    if(avcodec_open2(is->vCodecCtx, pVideoCodec, &videoOptionsDict)<0)
         return -1; // Could not open codec
-    // Allocate video frame
-    decodedFrame=av_frame_alloc();
-    scaleFrame=av_frame_alloc();
+    packet_queue_init(&is->videoq);
+    is->scaleFrame=av_frame_alloc();
     // Allocate an AVFrame structure
-    frameRGBA=av_frame_alloc();
-    if(frameRGBA==NULL)
+    is->frameRGBA=av_frame_alloc();
+    if(is->frameRGBA==NULL)
         return -1;
-    pthread_mutex_init(&mutex, NULL);
+
+    is->init = 2;
+    pthread_mutex_lock(&is->mutex);
+    while(is->stop != 0){
+        pthread_cond_wait(&is->cond, &is->mutex);
+    }
+    pthread_mutex_unlock(&is->mutex);
+    pthread_create(&is->video_decode_tid, NULL, videoDecodeThread, is);
+    pthread_create(&is->video_display_tid, NULL, videoDisplayThread, NULL);
+
+    while(av_read_frame(pFormatCtx, &packet)>=0 && !is->stop) {
+        // Is this a packet from the video stream?
+        if(packet.stream_index == is->videoStream) {
+            packet_queue_put(&is->videoq, &packet);
+        } else if (packet.stream_index == is->audioStream) {
+            packet_queue_put(&is->audioq, &packet);
+        } else {
+            // Free the packet that was allocated by av_read_frame
+            av_free_packet(&packet);
+        }
+    }
     return 0;
+}
+
+jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
+    VideoState      *is;
+    char *videoFileName;
+    is = av_mallocz(sizeof(VideoState));
+    videoFileName = (char *)(*pEnv)->GetStringUTFChars(pEnv, pFileName, NULL);
+    LOGI("video file name is %s", videoFileName);
+    av_strlcpy(is->filename, videoFileName, 1024);
+    pthread_mutex_init(&is->pictq_mutex, NULL);
+    pthread_cond_init(&is->pictq_cond, NULL);
+    pthread_mutex_init(&is->display_mutex, NULL);
+    pthread_mutex_init(&is->decode_mutex, NULL);
+    pthread_mutex_init(&is->mutex, NULL);
+    pthread_cond_init(&is->cond, NULL);
+    pthread_create(&is->read_packet_tid, NULL, readPacketThread, is);
 }
 
 jobject createBitmap(JNIEnv *pEnv, int pWidth, int pHeight) {
@@ -248,7 +446,11 @@ jobject createBitmap(JNIEnv *pEnv, int pWidth, int pHeight) {
 
 jintArray naGetVideoRes(JNIEnv *pEnv, jobject pObj) {
     jintArray lRes;
-	if (NULL == vCodecCtx) {
+    VideoState *is = global_video_state;
+    while(is->init < 1){
+        usleep(100);
+    }
+	if (NULL == is->vCodecCtx) {
 		return NULL;
 	}
 	lRes = (*pEnv)->NewIntArray(pEnv, 2);
@@ -257,15 +459,19 @@ jintArray naGetVideoRes(JNIEnv *pEnv, jobject pObj) {
 		return NULL;
 	}
 	jint lVideoRes[2];
-	lVideoRes[0] = vCodecCtx->width;
-	lVideoRes[1] = vCodecCtx->height;
+	lVideoRes[0] = is->vCodecCtx->width;
+	lVideoRes[1] = is->vCodecCtx->height;
 	(*pEnv)->SetIntArrayRegion(pEnv, lRes, 0, 2, lVideoRes);
 	return lRes;
 }
 
 jintArray naGetAudioInfo(JNIEnv *pEnv, jobject pObj) {
     jintArray lInfo;
-	if (NULL == aCodecCtx) {
+    VideoState *is = global_video_state;
+    while(is->init < 1){
+        usleep(100);
+    }
+	if (NULL == is->aCodecCtx) {
 		return NULL;
 	}
 	lInfo = (*pEnv)->NewIntArray(pEnv, 3);
@@ -274,39 +480,25 @@ jintArray naGetAudioInfo(JNIEnv *pEnv, jobject pObj) {
 		return NULL;
 	}
 	jint lAudioInfo[3];
-	lAudioInfo[0] = aCodecCtx->sample_rate;
-	lAudioInfo[1] = aCodecCtx->channels;
-	lAudioInfo[2] = aCodecCtx->sample_fmt;
+	lAudioInfo[0] = is->aCodecCtx->sample_rate;
+	lAudioInfo[1] = is->aCodecCtx->channels;
+	lAudioInfo[2] = is->aCodecCtx->sample_fmt;
 	(*pEnv)->SetIntArrayRegion(pEnv, lInfo, 0, 3, lAudioInfo);
 	return lInfo;
 }
 
-void finish(JNIEnv *pEnv) {
-	pthread_mutex_destroy(&mutex);
-	if(stop != -1) {
-	    //unlock the bitmap
-	    AndroidBitmap_unlockPixels(pEnv, bitmap);
-	}
-	//av_free(buffer);  //why ?
-	av_free(scalebuffer);
-	// Free the RGB image
-	av_free(frameRGBA);
-	// Free the YUV frame
-	av_free(decodedFrame);
-	av_free(scaleFrame);
-	// Close the codec
-	avcodec_close(vCodecCtx);
-	avcodec_close(aCodecCtx);
-	// Close the video file
-	avformat_close_input(&formatCtx);
-	// shut down the native audio system
-	shutdown();
-}
-
 int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight) {
-	pthread_mutex_lock(&mutex);
+    int scalebuffersize;
+    VideoState *is = global_video_state;
+
+    while(is->init < 2){
+        usleep(100);
+    }
+	pthread_mutex_lock(&is->display_mutex);
+	pthread_mutex_lock(&is->decode_mutex);
+
 	if (0 != pSurface) {
-        if(stop == 0){
+        if(is->stop == 0){
             ANativeWindow_release(window);
         }
 		// get the native window reference
@@ -317,32 +509,30 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
 		// release the native window
 		ANativeWindow_release(window);
 	}
-
     if(pWidth == 0 || pHeight == 0) {
-        if(stop == -1) {
+        if(is->stop == -1) {
             finish(pEnv);
         } else {
-            stop = 1;
+            is->stop = 1;
         };
-        pthread_mutex_unlock(&mutex);
+        pthread_mutex_unlock(&global_video_state->display_mutex);
         return -1;
     }
-
-	width = pWidth;
-    height = pHeight;
+	is->width = pWidth;
+    is->height = pHeight;
 
     //create a bitmap as the buffer for frameRGBA
     bitmap = createBitmap(pEnv, pWidth, pHeight);
-    if (AndroidBitmap_lockPixels(pEnv, bitmap, &buffer) < 0){
-        pthread_mutex_unlock(&mutex);
+    if (AndroidBitmap_lockPixels(pEnv, bitmap, &is->buffer) < 0){
+        pthread_mutex_unlock(&global_video_state->display_mutex);
         return -1;
     }
     #if USE_SWS_CTX //use libyuv
     //get the scaling context
-    sws_ctx = sws_getContext (
-            vCodecCtx->width,
-            vCodecCtx->height,
-            vCodecCtx->pix_fmt,
+    is->sws_ctx = sws_getContext (
+            is->vCodecCtx->width,
+            is->vCodecCtx->height,
+            is->vCodecCtx->pix_fmt,
             pWidth,
             pHeight,
             AV_PIX_FMT_RGBA,
@@ -355,140 +545,18 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     // Assign appropriate parts of bitmap to image planes in pFrameRGBA
     // Note that pFrameRGBA is an AVFrame, but AVFrame is a superset
     // of AVPicture
-    avpicture_fill((AVPicture *)frameRGBA, buffer, AV_PIX_FMT_RGBA,
+    avpicture_fill((AVPicture *)global_video_state->frameRGBA, is->buffer, AV_PIX_FMT_RGBA,
             pWidth, pHeight);
-
     scalebuffersize = avpicture_get_size(AV_PIX_FMT_YUV420P, pWidth, pHeight);
-    if(scalebuffer != NULL){
-        free(scalebuffer);
+    if(is->scalebuffer != NULL){
+        free(is->scalebuffer);
     }
-    scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
-    avpicture_fill((AVPicture *)scaleFrame, scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
-    pthread_mutex_unlock(&mutex);
+    is->scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
+    avpicture_fill((AVPicture *)global_video_state->scaleFrame, is->scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
+
+    pthread_mutex_unlock(&global_video_state->decode_mutex);
+    pthread_mutex_unlock(&global_video_state->display_mutex);
     return 0;
-}
-
-void videoplay(JNIEnv *pEnv) {
-	ANativeWindow_Buffer 	windowBuffer;
-	AVPacket        		packet;
-	int 					i=0;
-	int            			frameFinished;
-    //struct timeval start;
-    //struct timeval end;
-    //float time_use=0;
-    while(!stop) {
-        if(packet_queue_get(&videoq, &packet, 1) < 0) {
-            // means we quit getting packets
-            break;
-        }
-        //gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
-        // Decode video frame
-        avcodec_decode_video2(vCodecCtx, decodedFrame, &frameFinished, &packet);
-        //gettimeofday(&end,NULL);
-        //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
-        //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
-        pthread_mutex_lock(&mutex);
-        // Did we get a video frame?
-        if(frameFinished && !stop) {
-            /* save frame after decode to yuv file
-            if(i < 20){
-                FILE *fp;
-                int j;
-                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.yuv","ab");
-                for (j = 0; j<vCodecCtx->height; j++) {
-                    fwrite(decodedFrame->data[0] + j*decodedFrame->linesize[0], vCodecCtx->width, 1, fp);
-                }
-                for (j = 0; j<vCodecCtx->height/2; j++) {
-                    fwrite(decodedFrame->data[1] + j*decodedFrame->linesize[1], vCodecCtx->width/2, 1, fp);
-                }
-                for (j = 0; j<vCodecCtx->height/2; j++){
-                    fwrite(decodedFrame->data[2] + j*decodedFrame->linesize[2], vCodecCtx->width/2, 1, fp);
-                }
-                fclose(fp);
-            }//*/
-            // Convert the image from its native format to RGBA
-            //gettimeofday(&start,NULL);
-#if USE_SWS_CTX
-            sws_scale
-				(
-					sws_ctx,
-					(uint8_t const * const *)decodedFrame->data,
-					decodedFrame->linesize,
-					0,
-					vCodecCtx->height,
-					frameRGBA->data,
-					frameRGBA->linesize
-				);
-#else
-            I420Scale(decodedFrame->data[0],decodedFrame->linesize[0],
-						  decodedFrame->data[1],decodedFrame->linesize[1],
-						  decodedFrame->data[2],decodedFrame->linesize[2],
-						  vCodecCtx->width,vCodecCtx->height,
-						  scaleFrame->data[0],scaleFrame->linesize[0],
-						  scaleFrame->data[1],scaleFrame->linesize[1],
-						  scaleFrame->data[2],scaleFrame->linesize[2],
-						  width,height,kFilterNone);
-
-            //why not I420ToRGBA？ ijkplayer uses I420ToABGR
-            I420ToABGR(scaleFrame->data[0],scaleFrame->linesize[0],
-						  scaleFrame->data[1],scaleFrame->linesize[1],
-						  scaleFrame->data[2],scaleFrame->linesize[2],
-						  frameRGBA->data[0],frameRGBA->linesize[0],
-						  width,height);
-#endif
-            //gettimeofday(&end,NULL);
-            //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
-            //LOGI("I420Scale and I420ToABGR use time : %.10f\n",time_use);
-            /* save frame after scale to rgba file
-            if(i < 20){
-                FILE *fp;
-                fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
-                for (int j = 0; j<height; j++) {
-                    fwrite(frameRGBA->data[0] + j*frameRGBA->linesize[0], width*4, 1, fp);
-                }
-                fclose(fp);
-            }//*/
-            // lock the window buffer
-            if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
-                LOGE("cannot lock window");
-            } else {
-                // draw the frame on buffer
-                LOGI("copy buffer %d:%d:%d", width, height, width*height*4);
-                LOGI("window buffer: %d:%d:%d", windowBuffer.width,
-                    windowBuffer.height, windowBuffer.stride);
-                if(width == windowBuffer.width && height == windowBuffer.height){
-                    //memcpy(windowBuffer.bits, buffer,  width * height * 4);
-                    for (int h = 0; h < height; h++){
-                        memcpy(windowBuffer.bits + h * windowBuffer.stride *4,
-                            buffer + h * frameRGBA->linesize[0],width*4);
-                    }
-                }
-                // unlock the window buffer and post it to display
-                ANativeWindow_unlockAndPost(window);
-                // count number of frames
-                ++i;
-            }
-            av_free_packet(&packet);
-        }
-        pthread_mutex_unlock(&mutex);
-	}
-	LOGI("total No. of frames decoded and rendered %d", i);
-	finish(pEnv);
-}
-
-void readPkt() {
-	AVPacket        		packet;
-	while(av_read_frame(formatCtx, &packet)>=0 && !stop) {
-		// Is this a packet from the video stream?
-		if(packet.stream_index==videoStream) {
-            packet_queue_put(&videoq, &packet);
-		} else if (packet.stream_index==audioStream) {
-			packet_queue_put(&audioq, &packet);
-		} else {
-			// Free the packet that was allocated by av_read_frame
-			av_free_packet(&packet);
-		}
-	}
 }
 
 static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int buf_size) {
@@ -500,6 +568,8 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
     int len1, data_size = 0;
     struct SwrContext *swr_ctx = NULL;
     int resampled_data_size;
+
+    VideoState *is = global_video_state;
 
     for(;;) {
         while(audio_pkt_size > 0) {
@@ -578,10 +648,10 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
         if(pkt.data) {
             av_free_packet(&pkt);
         }
-        if(quit) {
+        if(is->quit) {
             return -1;
         }
-        if(packet_queue_get(&audioq, &pkt, 1) < 0) {
+        if(packet_queue_get(&is->audioq, &pkt, 1) < 0) {
             return -1;
         }
         audio_pkt_data = pkt.data;
@@ -603,7 +673,7 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
     while(len > 0) {
         if(audio_buf_index >= audio_buf_size) {
             /* We have already sent all our data; get more */
-            audio_size = audio_decode_frame(aCodecCtx, audio_buf, audio_buf_size);
+            audio_size = audio_decode_frame(global_video_state->aCodecCtx, audio_buf, audio_buf_size);
             if(audio_size < 0) {
 	            /* If error, output silence */
 	            audio_buf_size = 1024; // arbitrary?
@@ -627,7 +697,7 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
 
 int getPcm(void **pcm, size_t *pcmSize) {
     static uint8_t audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
-    *pcmSize = audio_decode_frame(aCodecCtx, audio_buf, 0);
+    *pcmSize = audio_decode_frame(global_video_state->aCodecCtx, audio_buf, 0);
     *pcm = audio_buf;
 }
 
@@ -635,21 +705,29 @@ int getPcm(void **pcm, size_t *pcmSize) {
  * start the video playback
  */
 void naPlay(JNIEnv *pEnv, jobject pObj) {
-	//create a new thread for video decode and render
-	pthread_t readPktThread,audioPlayThread,vedioPlayThread;
-	stop = 0;
-	pthread_create(&readPktThread, NULL, readPkt, NULL);
+    VideoState *is = global_video_state;
+
+    pthread_mutex_lock(&is->mutex);
+    is->stop = 0;
+    pthread_cond_signal(&is->cond);
+    pthread_mutex_unlock(&is->mutex);
+
 	#ifndef USE_AUDIO_TRACK
+	pthread_t audioPlayThread;
+	static struct audioArgs audio_args;
+	memset(&audio_args,0,sizeof(struct audioArgs));
+    audio_args.rate = is->aCodecCtx->sample_rate;
+    audio_args.channels = is->aCodecCtx->channels;
+    audio_args.pcm_callback = getPcm;
 	pthread_create(&audioPlayThread, NULL, audioplay, (void *)&audio_args);
 	#endif
-	pthread_create(&vedioPlayThread, NULL, videoplay, NULL);
 }
 
 /**
  * stop the video playback
  */
 void naStop(JNIEnv *pEnv, jobject pObj) {
-	stop = 1;
+	global_video_state->stop = 1;
 }
 
 jint JNI_OnLoad(JavaVM* pVm, void* reserved) {

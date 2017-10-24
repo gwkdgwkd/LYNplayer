@@ -41,7 +41,6 @@ typedef struct VideoState {
     int             videoStream, audioStream;
     AVCodecContext  	*vCodecCtx;
     AVCodecContext  	*aCodecCtx;
-    AVStream        *audio_st;
     PacketQueue     audioq;
     uint8_t         audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
     unsigned int    audio_buf_size;
@@ -51,7 +50,6 @@ typedef struct VideoState {
     uint8_t         *audio_pkt_data;
     int             audio_pkt_size;
 
-    AVStream        *video_st;
     PacketQueue     videoq;
     AVFrame         *scaleFrame;
     AVFrame         *frameRGBA;
@@ -72,7 +70,7 @@ typedef struct VideoState {
     pthread_t      video_display_tid;
     char            filename[1024];
     int             quit;
-    int             stop;
+    int             is_play;
     int             init;
     float           ratio;
     int 			width;

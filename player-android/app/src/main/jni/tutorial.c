@@ -108,7 +108,7 @@ void videoDecodeThread(void *arg) {
     VideoState *is = (VideoState *)arg;
     decodedFrame = av_frame_alloc();
 
-    while(!is->stop) {
+    while(!is->quit) {
         if(packet_queue_get(&is->videoq, &packet, 1) < 0) {
             // means we quit getting packets
             break;
@@ -120,7 +120,7 @@ void videoDecodeThread(void *arg) {
         //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
         //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
         // Did we get a video frame?
-        if(frameFinished && !is->stop) {
+        if(frameFinished && !is->quit) {
             /* save frame after decode to yuv file
             if(i < 20){
                 FILE *fp;
@@ -191,12 +191,10 @@ void videoDecodeThread(void *arg) {
 	LOGI("total No. of frames decoded %d", i);
 }
 
-void finish(JNIEnv *pEnv) {
-    VideoState *is = global_video_state;
-
+void finish(JNIEnv *pEnv,VideoState *is) {
 	pthread_mutex_destroy(&is->mutex);
 	pthread_cond_destroy(&is->cond);
-	if(is->stop != -1) {
+	if(is->is_play) {
 	    //unlock the bitmap
 	    AndroidBitmap_unlockPixels(pEnv, bitmap);
 	}
@@ -205,7 +203,6 @@ void finish(JNIEnv *pEnv) {
 	// Free the RGB image
 	av_free(is->frameRGBA);
 	// Free the YUV frame
-	//av_free(decodedFrame);
 	av_free(is->scaleFrame);
 	// Close the codec
 	avcodec_close(is->vCodecCtx);
@@ -222,7 +219,7 @@ void videoDisplayThread(JNIEnv *pEnv) {
     int i = 0;
     VideoState *is = global_video_state;
 
-    while(!is->stop) {
+    while(!is->quit) {
         /* wait until we have a pic */
         pthread_mutex_lock(&is->pictq_mutex);
         while(is->pictq_size < 1 && !is->quit) {
@@ -234,8 +231,10 @@ void videoDisplayThread(JNIEnv *pEnv) {
             LOGE("picture is NULL");
             break;
         }
-
         pthread_mutex_lock(&is->display_mutex);
+        if(is->quit){
+            break;
+        }
         // lock the window buffer
         if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
             LOGE("cannot lock window");
@@ -254,7 +253,6 @@ void videoDisplayThread(JNIEnv *pEnv) {
                 pthread_mutex_unlock(&is->display_mutex);
                 continue;
             }
-
             // draw the frame on buffer
             LOGI("copy buffer %d:%d:%d", is->width, is->height, is->width*is->height*4);
             LOGI("window buffer: %d:%d:%d", windowBuffer.width,
@@ -285,7 +283,7 @@ void videoDisplayThread(JNIEnv *pEnv) {
         pthread_mutex_unlock(&is->display_mutex);
 	}
 	LOGI("total No. of frames rendered %d", i);
-	finish(pEnv);
+	finish(pEnv,is);
 }
 
 int readPacketThread(void *arg) {
@@ -302,7 +300,6 @@ int readPacketThread(void *arg) {
     global_video_state = is;
     is->init = 0;
     is->videoStream = -1;
-    is->stop = -1;
 
     // Register all formats and codecs
     av_register_all();
@@ -338,10 +335,6 @@ int readPacketThread(void *arg) {
     }
     avcodec_open2(is->aCodecCtx, pAudioCodec, &audioOptionsDict);
     packet_queue_init(&is->audioq);
-        //audio_args.rate = is->aCodecCtx->sample_rate;
-        //audio_args.channels = is->aCodecCtx->channels;
-        //audio_args.pcm_callback = getPcm;
-    is->audio_st = pFormatCtx->streams[is->audioStream];
     is->audio_buf_size = 0;
     is->audio_buf_index = 0;
     memset(&is->audio_pkt, 0, sizeof(is->audio_pkt));
@@ -378,14 +371,14 @@ int readPacketThread(void *arg) {
 
     is->init = 2;
     pthread_mutex_lock(&is->mutex);
-    while(is->stop != 0){
+    while(!is->is_play){
         pthread_cond_wait(&is->cond, &is->mutex);
     }
     pthread_mutex_unlock(&is->mutex);
     pthread_create(&is->video_decode_tid, NULL, videoDecodeThread, is);
     pthread_create(&is->video_display_tid, NULL, videoDisplayThread, NULL);
 
-    while(av_read_frame(pFormatCtx, &packet)>=0 && !is->stop) {
+    while(av_read_frame(pFormatCtx, &packet)>=0 && !is->quit) {
         // Is this a packet from the video stream?
         if(packet.stream_index == is->videoStream) {
             packet_queue_put(&is->videoq, &packet);
@@ -498,7 +491,7 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
 	pthread_mutex_lock(&is->decode_mutex);
 
 	if (0 != pSurface) {
-        if(is->stop == 0){
+        if(is->is_play){
             ANativeWindow_release(window);
         }
 		// get the native window reference
@@ -510,12 +503,13 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
 		ANativeWindow_release(window);
 	}
     if(pWidth == 0 || pHeight == 0) {
-        if(is->stop == -1) {
-            finish(pEnv);
+        if(!is->is_play) {
+            finish(pEnv,is);
         } else {
-            is->stop = 1;
+            is->quit = 1;
         };
-        pthread_mutex_unlock(&global_video_state->display_mutex);
+        pthread_mutex_unlock(&is->decode_mutex);
+        pthread_mutex_unlock(&is->display_mutex);
         return -1;
     }
 	is->width = pWidth;
@@ -524,7 +518,8 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     //create a bitmap as the buffer for frameRGBA
     bitmap = createBitmap(pEnv, pWidth, pHeight);
     if (AndroidBitmap_lockPixels(pEnv, bitmap, &is->buffer) < 0){
-        pthread_mutex_unlock(&global_video_state->display_mutex);
+        pthread_mutex_unlock(&is->decode_mutex);
+        pthread_mutex_unlock(&is->display_mutex);
         return -1;
     }
     #if USE_SWS_CTX //use libyuv
@@ -545,95 +540,91 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     // Assign appropriate parts of bitmap to image planes in pFrameRGBA
     // Note that pFrameRGBA is an AVFrame, but AVFrame is a superset
     // of AVPicture
-    avpicture_fill((AVPicture *)global_video_state->frameRGBA, is->buffer, AV_PIX_FMT_RGBA,
+    avpicture_fill((AVPicture *)is->frameRGBA, is->buffer, AV_PIX_FMT_RGBA,
             pWidth, pHeight);
     scalebuffersize = avpicture_get_size(AV_PIX_FMT_YUV420P, pWidth, pHeight);
     if(is->scalebuffer != NULL){
         free(is->scalebuffer);
     }
     is->scalebuffer = (uint8_t *) av_malloc(scalebuffersize * sizeof(uint8_t));
-    avpicture_fill((AVPicture *)global_video_state->scaleFrame, is->scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
+    avpicture_fill((AVPicture *)is->scaleFrame, is->scalebuffer, AV_PIX_FMT_YUV420P, pWidth, pHeight);
 
-    pthread_mutex_unlock(&global_video_state->decode_mutex);
-    pthread_mutex_unlock(&global_video_state->display_mutex);
+    pthread_mutex_unlock(&is->decode_mutex);
+    pthread_mutex_unlock(&is->display_mutex);
     return 0;
 }
 
-static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int buf_size) {
-    static AVPacket pkt;
-    static uint8_t *audio_pkt_data = NULL;
-    static int audio_pkt_size = 0;
-    static AVFrame frame;
+static int audio_decode_frame(VideoState *is) {
+    AVPacket *pkt = &is->audio_pkt;
+    AVFrame *frame = &is->audio_frame;
+    uint8_t *buf = is->audio_buf;
 
     int len1, data_size = 0;
     struct SwrContext *swr_ctx = NULL;
     int resampled_data_size;
 
-    VideoState *is = global_video_state;
-
     for(;;) {
-        while(audio_pkt_size > 0) {
+        while(is->audio_pkt_size > 0) {
             int got_frame = 0;
-            len1 = avcodec_decode_audio4(codecCtx, &frame, &got_frame, &pkt);
+            len1 = avcodec_decode_audio4(is->aCodecCtx, frame, &got_frame, pkt);
             if(len1 < 0) {
                 /* if error, skip frame */
-                audio_pkt_size = 0;
+                is->audio_pkt_size = 0;
                 break;
             }
-            audio_pkt_data += len1;
-            audio_pkt_size -= len1;
+            is->audio_pkt_data += len1;
+            is->audio_pkt_size -= len1;
             if (got_frame) {
                 data_size =
                     av_samples_get_buffer_size
                     (
                         NULL,
-                        codecCtx->channels,
-                        frame.nb_samples,
-                        codecCtx->sample_fmt,
+                        is->aCodecCtx->channels,
+                        frame->nb_samples,
+                        is->aCodecCtx->sample_fmt,
                         1
                     );
-                if (frame.channels > 0 && frame.channel_layout == 0){
-                    frame.channel_layout = av_get_default_channel_layout(frame.channels);
-                } else if (frame.channels == 0 && frame.channel_layout > 0) {
-                    frame.channels = av_get_channel_layout_nb_channels(frame.channel_layout);
+                if (frame->channels > 0 && frame->channel_layout == 0){
+                    frame->channel_layout = av_get_default_channel_layout(frame->channels);
+                } else if (frame->channels == 0 && frame->channel_layout > 0) {
+                    frame->channels = av_get_channel_layout_nb_channels(frame->channel_layout);
                 }
                 /*
-                LOGI("frame.sample_rate = %d \n", frame.sample_rate);
-                LOGI("frame.format = %d \n", frame.format);
-                LOGI("frame.format bits = %d \n", av_get_bytes_per_sample(frame.format));
-                LOGI("frame.channels = %d \n", frame.channels);
-                LOGI("frame.channel_layout = %d \n", frame.channel_layout);
-                LOGI("frame.nb_samples = %d \n", frame.nb_samples);
+                LOGI("frame->sample_rate = %d \n", frame->sample_rate);
+                LOGI("frame->format = %d \n", frame->format);
+                LOGI("frame->format bits = %d \n", av_get_bytes_per_sample(frame->format));
+                LOGI("frame->channels = %d \n", frame->channels);
+                LOGI("frame->channel_layout = %d \n", frame->channel_layout);
+                LOGI("frame->nb_samples = %d \n", frame->nb_samples);
                 //*/
-                if(frame.format != AV_SAMPLE_FMT_S16
-                    || frame.channel_layout != codecCtx->channel_layout
-                    || frame.sample_rate != codecCtx->sample_rate
-                    || frame.nb_samples != 1024) {
+                if(frame->format != AV_SAMPLE_FMT_S16
+                    || frame->channel_layout != is->aCodecCtx->channel_layout
+                    || frame->sample_rate != is->aCodecCtx->sample_rate
+                    || frame->nb_samples != 1024) {
                     if (swr_ctx != NULL) {
                         swr_free(&swr_ctx);
                         swr_ctx = NULL;
                     }
-                    swr_ctx = swr_alloc_set_opts(NULL, frame.channel_layout,
-                        AV_SAMPLE_FMT_S16, frame.sample_rate,frame.channel_layout,
-                        (enum AVSampleFormat)frame.format, frame.sample_rate, 0, NULL);
+                    swr_ctx = swr_alloc_set_opts(NULL, frame->channel_layout,
+                        AV_SAMPLE_FMT_S16, frame->sample_rate,frame->channel_layout,
+                        (enum AVSampleFormat)frame->format, frame->sample_rate, 0, NULL);
                     if (swr_ctx == NULL || swr_init(swr_ctx) < 0) {
                         LOGE("swr_init failed!!!" );
                         break;
                     }
                 }
                 if(swr_ctx) {
-                    int dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, frame.sample_rate) + frame.nb_samples,
-                                                        frame.sample_rate, AV_SAMPLE_FMT_S16, AV_ROUND_INF);
+                    int dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, frame->sample_rate) + frame->nb_samples,
+                                                        frame->sample_rate, AV_SAMPLE_FMT_S16, AV_ROUND_INF);
                     //LOGI("swr convert ! \n");
                     //LOGI("dst_nb_samples : %d \n", dst_nb_samples);
                     //LOGI("data_size : %d \n", data_size);
-
-                    int len2 = swr_convert(swr_ctx, &audio_buf, dst_nb_samples,(const uint8_t**)frame.data, frame.nb_samples);
+                    int len2 = swr_convert(swr_ctx, &buf, dst_nb_samples,(const uint8_t**)frame->data, frame->nb_samples);
                     if (len2 < 0) {
                         LOGE("swr_convert failed \n" );
                         break;
                     }
-                    resampled_data_size = frame.channels * len2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
+                    resampled_data_size = frame->channels * len2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
                 }else{
                     resampled_data_size = data_size;
                 }
@@ -645,17 +636,17 @@ static int audio_decode_frame(AVCodecContext *codecCtx, uint8_t *audio_buf, int 
             /* We have data, return it and come back for more later */
             return resampled_data_size;
         }
-        if(pkt.data) {
-            av_free_packet(&pkt);
+        if(pkt->data) {
+            av_free_packet(pkt);
         }
         if(is->quit) {
             return -1;
         }
-        if(packet_queue_get(&is->audioq, &pkt, 1) < 0) {
+        if(packet_queue_get(&is->audioq, pkt, 1) < 0) {
             return -1;
         }
-        audio_pkt_data = pkt.data;
-        audio_pkt_size = pkt.size;
+        is->audio_pkt_data = pkt->data;
+        is->audio_pkt_size = pkt->size;
     }
 }
 
@@ -665,40 +656,37 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
     jbyte *pcmindex = pcm;
 
     int len1, audio_size;
-
-    static uint8_t audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
-    static unsigned int audio_buf_size = 0;
-    static unsigned int audio_buf_index = 0;
+    VideoState *is = global_video_state;
 
     while(len > 0) {
-        if(audio_buf_index >= audio_buf_size) {
+        if(is->audio_buf_index >= is->audio_buf_size) {
             /* We have already sent all our data; get more */
-            audio_size = audio_decode_frame(global_video_state->aCodecCtx, audio_buf, audio_buf_size);
+            audio_size = audio_decode_frame(is);
             if(audio_size < 0) {
 	            /* If error, output silence */
-	            audio_buf_size = 1024; // arbitrary?
-	            memset(audio_buf, 0, audio_buf_size);
+	            is->audio_buf_size = 1024; // arbitrary?
+	            memset(is->audio_buf, 0, is->audio_buf_size);
             } else {
-                audio_buf_size = audio_size;
+                is->audio_buf_size = audio_size;
             }
-            audio_buf_index = 0;
+            is->audio_buf_index = 0;
         }
-        len1 = audio_buf_size - audio_buf_index;
+        len1 = is->audio_buf_size - is->audio_buf_index;
         if(len1 > len)
             len1 = len;
-        memcpy(pcmindex, (uint8_t *)audio_buf + audio_buf_index, len1);
+        memcpy(pcmindex, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
         len -= len1;
         pcmindex += len1;
-        audio_buf_index += len1;
+        is->audio_buf_index += len1;
     }
     (*pEnv)->ReleaseByteArrayElements(pEnv, buffer, pcm, 0);
     return pcmindex - pcm;
 }
 
 int getPcm(void **pcm, size_t *pcmSize) {
-    static uint8_t audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
-    *pcmSize = audio_decode_frame(global_video_state->aCodecCtx, audio_buf, 0);
-    *pcm = audio_buf;
+    VideoState *is = global_video_state;
+    *pcmSize = audio_decode_frame(is);
+    *pcm = is->audio_buf;
 }
 
 /**
@@ -708,7 +696,7 @@ void naPlay(JNIEnv *pEnv, jobject pObj) {
     VideoState *is = global_video_state;
 
     pthread_mutex_lock(&is->mutex);
-    is->stop = 0;
+    is->is_play = 1;
     pthread_cond_signal(&is->cond);
     pthread_mutex_unlock(&is->mutex);
 
@@ -727,7 +715,7 @@ void naPlay(JNIEnv *pEnv, jobject pObj) {
  * stop the video playback
  */
 void naStop(JNIEnv *pEnv, jobject pObj) {
-	global_video_state->stop = 1;
+	global_video_state->quit = 1;
 }
 
 jint JNI_OnLoad(JavaVM* pVm, void* reserved) {

@@ -1,4 +1,9 @@
+#ifndef H_TYPE
+#define H_TYPE
+
 #include <stdio.h>
+#include <pthread.h>
+#include <sys/time.h>
 
 #include <jni.h>
 
@@ -14,3 +19,5 @@ typedef struct audioArgs {
     int channels;
     get_pcm_buffer pcm_callback;
 }*audioArgsPtr;
+
+#endif //H_TYPE

@@ -102,6 +102,7 @@ void videoDecodeThread(void *arg) {
 	AVFrame         	    *decodedFrame = NULL;
 	int 					i=0;
 	int            			frameFinished;
+	int            			width,height;
     //struct timeval start;
     //struct timeval end;
     //float time_use=0;
@@ -140,6 +141,9 @@ void videoDecodeThread(void *arg) {
             // Convert the image from its native format to RGBA
             //gettimeofday(&start,NULL);
             pthread_mutex_lock(&is->decode_mutex);
+            width = is->width;
+            height = is->height;
+            pthread_mutex_unlock(&is->decode_mutex);
 #if USE_SWS_CTX
             sws_scale
 				(
@@ -159,13 +163,13 @@ void videoDecodeThread(void *arg) {
 						  is->scaleFrame->data[0],is->scaleFrame->linesize[0],
 						  is->scaleFrame->data[1],is->scaleFrame->linesize[1],
 						  is->scaleFrame->data[2],is->scaleFrame->linesize[2],
-						  is->width,is->height,kFilterNone);
+						  width,height,kFilterNone);
             //why not I420ToRGBA？ ijkplayer uses I420ToABGR
             I420ToABGR(is->scaleFrame->data[0],is->scaleFrame->linesize[0],
 						  is->scaleFrame->data[1],is->scaleFrame->linesize[1],
 						  is->scaleFrame->data[2],is->scaleFrame->linesize[2],
 						  is->frameRGBA->data[0],is->frameRGBA->linesize[0],
-						  is->width,is->height);
+						  width,height);
 #endif
             //gettimeofday(&end,NULL);
             //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
@@ -174,15 +178,14 @@ void videoDecodeThread(void *arg) {
             if(i < 20){
                 FILE *fp;
                 fp = fopen("/storage/emulated/0/android-ffmpeg-tutorial02/1.rgba","ab");
-                for (int j = 0; j < is->height; j++) {
-                    fwrite(is->frameRGBA->data[0] + j*is->frameRGBA->linesize[0], is->width*4, 1, fp);
+                for (int j = 0; j < height; j++) {
+                    fwrite(is->frameRGBA->data[0] + j*is->frameRGBA->linesize[0], width*4, 1, fp);
                 }
                 fclose(fp);
             }//*/
-            if(queue_picture(is, is->frameRGBA,is->width,is->height,i) < 0) {
+            if(queue_picture(is, is->frameRGBA,width,height,i) < 0) {
                 break;
             }
-            pthread_mutex_unlock(&is->decode_mutex);
             i++;
             av_free_packet(&packet);
         }
@@ -219,7 +222,15 @@ void videoDisplayThread(JNIEnv *pEnv) {
     int i = 0;
     VideoState *is = global_video_state;
 
+    timer_init(&timer);
+
     while(!is->quit) {
+        pthread_mutex_lock(&timer.timer_mutex);
+        while(timer.wake_up_time.tv_sec != 0 || timer.wake_up_time.tv_usec != 0) {
+            pthread_cond_wait(&timer.timer_cond, &timer.timer_mutex);
+        }
+        pthread_mutex_unlock(&timer.timer_mutex);
+
         /* wait until we have a pic */
         pthread_mutex_lock(&is->pictq_mutex);
         while(is->pictq_size < 1 && !is->quit) {
@@ -235,6 +246,13 @@ void videoDisplayThread(JNIEnv *pEnv) {
         if(is->quit){
             break;
         }
+
+        pthread_mutex_lock(&timer.timer_mutex);
+        timer.wake_up_time.tv_sec = 0;
+        timer.wake_up_time.tv_usec = 33333;
+        pthread_cond_signal(&timer.timer_cond);
+        pthread_mutex_unlock(&timer.timer_mutex);
+
         // lock the window buffer
         if (ANativeWindow_lock(window, &windowBuffer, NULL) < 0) {
             LOGE("cannot lock window");

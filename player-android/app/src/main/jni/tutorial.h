@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include <pthread.h>
-#include <sys/time.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -15,6 +13,7 @@
 
 #include "type.h"
 #include "audiodevice.h"
+#include "timer.h"
 
 #define VIDEO_PICTURE_QUEUE_SIZE 1
 #define MAX_AUDIO_FRAME_SIZE 192000

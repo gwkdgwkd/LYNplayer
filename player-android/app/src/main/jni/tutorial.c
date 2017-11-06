@@ -3,6 +3,13 @@
 ANativeWindow* 		window;
 jobject				bitmap;
 
+int64_t get_time(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
 static void packet_queue_init(PacketQueue *q) {
     memset(q, 0, sizeof(PacketQueue));
     pthread_mutex_init(&q->mutex, NULL);
@@ -70,7 +77,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     return ret;
 }
 
-int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeight, int frameId) {
+int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeight, int frameId, double pts) {
     VideoPicture *vp;
     /* wait until we have space for a new pic */
     pthread_mutex_lock(&is->pictq_mutex);
@@ -86,6 +93,7 @@ int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeig
     vp->width = frameWidth;
     vp->height = frameHeight;
     vp->id = frameId;
+    vp->pts = pts;
     /* now we inform our display thread that we have a pic ready */
     if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
         is->pictq_windex = 0;
@@ -97,12 +105,31 @@ int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeig
     return 0;
 }
 
+double synchronize_video(VideoState *is, AVFrame *src_frame, double pts) {
+    double frame_delay;
+
+    if(pts != 0) {
+        /* if we have pts, set video clock to it */
+        is->video_clock = pts;
+    } else {
+        /* if we aren't given a pts, set it to the clock */
+        pts = is->video_clock;
+    }
+    /* update the video clock */
+    frame_delay = av_q2d(is->vCodecCtx->time_base);
+    /* if we are repeating a frame, adjust clock accordingly */
+    frame_delay += src_frame->repeat_pict * (frame_delay * 0.5);
+    is->video_clock += frame_delay;
+    return pts;
+}
+
 void videoDecodeThread(void *arg) {
 	AVPacket        		packet;
 	AVFrame         	    *decodedFrame = NULL;
 	int 					i=0;
 	int            			frameFinished;
 	int            			width,height;
+	double         	    pts;
     //struct timeval start;
     //struct timeval end;
     //float time_use=0;
@@ -114,12 +141,19 @@ void videoDecodeThread(void *arg) {
             // means we quit getting packets
             break;
         }
+        pts = 0;
         //gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
         // Decode video frame
         avcodec_decode_video2(is->vCodecCtx, decodedFrame, &frameFinished, &packet);
         //gettimeofday(&end,NULL);
         //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
         //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
+
+        if((pts = av_frame_get_best_effort_timestamp(decodedFrame)) == AV_NOPTS_VALUE) {
+            pts = 0;
+        }
+        pts *= av_q2d(is->video_st->time_base);
+
         // Did we get a video frame?
         if(frameFinished && !is->quit) {
             /* save frame after decode to yuv file
@@ -183,7 +217,8 @@ void videoDecodeThread(void *arg) {
                 }
                 fclose(fp);
             }//*/
-            if(queue_picture(is, is->frameRGBA,width,height,i) < 0) {
+            pts = synchronize_video(is, decodedFrame, pts);
+            if(queue_picture(is, is->frameRGBA,width,height,i,pts) < 0) {
                 break;
             }
             i++;
@@ -216,13 +251,33 @@ void finish(JNIEnv *pEnv,VideoState *is) {
 	shutdown();
 }
 
+double get_audio_clock(VideoState *is) {
+    double pts;
+    int hw_buf_size, bytes_per_sec, n;
+
+    pts = is->audio_clock; /* maintained in the audio thread */
+    hw_buf_size = is->audio_buf_size - is->audio_buf_index;
+    bytes_per_sec = 0;
+    n = is->audio_st->codec->channels * 2;
+    if(is->audio_st) {
+        bytes_per_sec = is->audio_st->codec->sample_rate * n;
+    }
+    if(bytes_per_sec) {
+        pts -= (double)hw_buf_size / bytes_per_sec;
+    }
+    return pts;
+}
+
 void videoDisplayThread(JNIEnv *pEnv) {
 	ANativeWindow_Buffer 	windowBuffer;
 	VideoPicture *vp;
     int i = 0;
     VideoState *is = global_video_state;
+    double actual_delay, delay, sync_threshold, ref_clock, diff;
 
     timer_init(&timer);
+    is->frame_timer = (double)get_time() / 1000000.0;
+    is->frame_last_delay = 40e-3;
 
     while(!is->quit) {
         pthread_mutex_lock(&timer.timer_mutex);
@@ -247,9 +302,39 @@ void videoDisplayThread(JNIEnv *pEnv) {
             break;
         }
 
+        delay = vp->pts - is->frame_last_pts; /* the pts from last time */
+        if(delay <= 0 || delay >= 1.0) {
+            /* if incorrect delay, use previous one */
+            delay = is->frame_last_delay;
+        }
+        /* save for next time */
+        is->frame_last_delay = delay;
+        is->frame_last_pts = vp->pts;
+
+        /* update delay to sync to audio */
+        ref_clock = get_audio_clock(is);
+        diff = vp->pts - ref_clock;
+        /* Skip or repeat the frame. Take delay into account
+        FFPlay still doesn't "know if this is the best guess." */
+        sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;
+        if(fabs(diff) < AV_NOSYNC_THRESHOLD) {
+            if(diff <= -sync_threshold) {
+                delay = 0;
+            } else if(diff >= sync_threshold) {
+                delay = 2 * delay;
+            }
+        }
+        is->frame_timer += delay;
+        /* computer the REAL delay */
+        actual_delay = is->frame_timer - (get_time() / 1000000.0);
+        if(actual_delay < 0.010) {
+            /* Really it should skip the picture instead */
+            actual_delay = 0.010;
+        }
+
         pthread_mutex_lock(&timer.timer_mutex);
         timer.wake_up_time.tv_sec = 0;
-        timer.wake_up_time.tv_usec = 33333;
+        timer.wake_up_time.tv_usec = (int)(actual_delay * 1000000);
         pthread_cond_signal(&timer.timer_cond);
         pthread_mutex_unlock(&timer.timer_mutex);
 
@@ -318,6 +403,7 @@ int readPacketThread(void *arg) {
     global_video_state = is;
     is->init = 0;
     is->videoStream = -1;
+    is->audioStream = -1;
 
     // Register all formats and codecs
     av_register_all();
@@ -335,9 +421,13 @@ int readPacketThread(void *arg) {
     for(i = 0; i < pFormatCtx->nb_streams; i++) {
         if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO && is->videoStream < 0) {
             is->videoStream = i;
+            is->video_st = pFormatCtx->streams[i];
+            is->vCodecCtx = pFormatCtx->streams[i]->codec;
         }
         if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO && is->audioStream < 0) {
             is->audioStream = i;
+            is->audio_st = pFormatCtx->streams[i];
+            is->aCodecCtx = pFormatCtx->streams[i]->codec;
         }
     }
     if(is->videoStream == -1)
@@ -345,7 +435,6 @@ int readPacketThread(void *arg) {
     if(is->audioStream == -1)
         return -1;
 
-    is->aCodecCtx=pFormatCtx->streams[is->audioStream]->codec;
     pAudioCodec = avcodec_find_decoder(is->aCodecCtx->codec_id);
     if(!pAudioCodec) {
         fprintf(stderr, "Unsupported codec!\n");
@@ -357,8 +446,6 @@ int readPacketThread(void *arg) {
     is->audio_buf_index = 0;
     memset(&is->audio_pkt, 0, sizeof(is->audio_pkt));
 
-    // Get a pointer to the codec context for the video stream
-    is->vCodecCtx=pFormatCtx->streams[is->videoStream]->codec;
     // Find the decoder for the video stream
     if(is->vCodecCtx->codec_id == AV_CODEC_ID_H264 ||
        is->vCodecCtx->codec_id == AV_CODEC_ID_HEVC ||
@@ -572,7 +659,7 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     return 0;
 }
 
-static int audio_decode_frame(VideoState *is) {
+static int audio_decode_frame(VideoState *is,double *pts_ptr) {
     AVPacket *pkt = &is->audio_pkt;
     AVFrame *frame = &is->audio_frame;
     uint8_t *buf = is->audio_buf;
@@ -580,6 +667,8 @@ static int audio_decode_frame(VideoState *is) {
     int len1, data_size = 0;
     struct SwrContext *swr_ctx = NULL;
     int resampled_data_size;
+    double pts;
+    int n;
 
     for(;;) {
         while(is->audio_pkt_size > 0) {
@@ -651,6 +740,10 @@ static int audio_decode_frame(VideoState *is) {
                 /* No data yet, get more frames */
                 continue;
             }
+            pts = is->audio_clock;
+            *pts_ptr = pts;
+            n = 2 * is->aCodecCtx->channels;
+            is->audio_clock += (double)resampled_data_size / (double)(n * is->aCodecCtx->sample_rate);
             /* We have data, return it and come back for more later */
             return resampled_data_size;
         }
@@ -665,6 +758,10 @@ static int audio_decode_frame(VideoState *is) {
         }
         is->audio_pkt_data = pkt->data;
         is->audio_pkt_size = pkt->size;
+        /* if update, update the audio clock w/pts */
+        if(pkt->pts != AV_NOPTS_VALUE) {
+            is->audio_clock = av_q2d(is->aCodecCtx->time_base)*pkt->pts;
+        }
     }
 }
 
@@ -673,13 +770,14 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
     jsize pcmsize = (*pEnv)->GetArrayLength(pEnv, buffer);
     jbyte *pcmindex = pcm;
 
+    double pts;
     int len1, audio_size;
     VideoState *is = global_video_state;
 
     while(len > 0) {
         if(is->audio_buf_index >= is->audio_buf_size) {
             /* We have already sent all our data; get more */
-            audio_size = audio_decode_frame(is);
+            audio_size = audio_decode_frame(is,&pts);
             if(audio_size < 0) {
 	            /* If error, output silence */
 	            is->audio_buf_size = 1024; // arbitrary?
@@ -702,8 +800,10 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
 }
 
 int getPcm(void **pcm, size_t *pcmSize) {
+    double pts;
+
     VideoState *is = global_video_state;
-    *pcmSize = audio_decode_frame(is);
+    *pcmSize = audio_decode_frame(is,&pts);
     *pcm = is->audio_buf;
 }
 

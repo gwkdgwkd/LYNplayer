@@ -17,6 +17,8 @@
 
 #define VIDEO_PICTURE_QUEUE_SIZE 1
 #define MAX_AUDIO_FRAME_SIZE 192000
+#define AV_SYNC_THRESHOLD 0.01
+#define AV_NOSYNC_THRESHOLD 10.0
 //#define USE_SWS_CTX 1
 //#define USE_AUDIO_TRACK 1
 
@@ -33,12 +35,14 @@ typedef struct VideoPicture {
     int width, height; /* source height & width */
     int allocated;
     int id;
+    double pts;
 } VideoPicture;
 
 typedef struct VideoState {
     AVFormatContext *pFormatCtx;
     int             videoStream, audioStream;
-    AVCodecContext  	*vCodecCtx;
+
+    AVStream        *audio_st;
     AVCodecContext  	*aCodecCtx;
     PacketQueue     audioq;
     uint8_t         audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) / 2];
@@ -48,7 +52,10 @@ typedef struct VideoState {
     AVPacket        audio_pkt;
     uint8_t         *audio_pkt_data;
     int             audio_pkt_size;
+    double         audio_clock;
 
+    AVStream        *video_st;
+    AVCodecContext  	*vCodecCtx;
     PacketQueue     videoq;
     AVFrame         *scaleFrame;
     AVFrame         *frameRGBA;
@@ -56,6 +63,10 @@ typedef struct VideoState {
     void*			scalebuffer;
     VideoPicture    pictq[VIDEO_PICTURE_QUEUE_SIZE];
     int             pictq_size, pictq_rindex, pictq_windex;
+    double          frame_timer;
+    double          frame_last_pts;
+    double          frame_last_delay;
+    double          video_clock; ///<pts of last decoded frame / predicted pts of next decoded frame
 
     pthread_mutex_t       mutex;
     pthread_cond_t        cond;

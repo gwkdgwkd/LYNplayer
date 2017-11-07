@@ -268,6 +268,27 @@ double get_audio_clock(VideoState *is) {
     return pts;
 }
 
+double get_video_clock(VideoState *is)
+{
+    double delta;
+    delta = (get_time() - is->video_current_pts_time) / 1000000.0;
+    return is->video_current_pts + delta;
+}
+
+double get_external_clock(VideoState *is) {
+    return av_gettime() / 1000000.0;
+}
+
+double get_master_clock(VideoState *is) {
+    if(is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
+        return get_video_clock(is);
+    } else if(is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+        return get_audio_clock(is);
+    } else {
+        return get_external_clock(is);
+    }
+}
+
 void videoDisplayThread(JNIEnv *pEnv) {
 	ANativeWindow_Buffer 	windowBuffer;
 	VideoPicture *vp;
@@ -278,6 +299,7 @@ void videoDisplayThread(JNIEnv *pEnv) {
     timer_init(&timer);
     is->frame_timer = (double)get_time() / 1000000.0;
     is->frame_last_delay = 40e-3;
+    is->video_current_pts_time = get_time();
 
     while(!is->quit) {
         pthread_mutex_lock(&timer.timer_mutex);
@@ -302,6 +324,9 @@ void videoDisplayThread(JNIEnv *pEnv) {
             break;
         }
 
+        is->video_current_pts = vp->pts;
+        is->video_current_pts_time = get_time();
+
         delay = vp->pts - is->frame_last_pts; /* the pts from last time */
         if(delay <= 0 || delay >= 1.0) {
             /* if incorrect delay, use previous one */
@@ -311,17 +336,19 @@ void videoDisplayThread(JNIEnv *pEnv) {
         is->frame_last_delay = delay;
         is->frame_last_pts = vp->pts;
 
-        /* update delay to sync to audio */
-        ref_clock = get_audio_clock(is);
-        diff = vp->pts - ref_clock;
-        /* Skip or repeat the frame. Take delay into account
-        FFPlay still doesn't "know if this is the best guess." */
-        sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;
-        if(fabs(diff) < AV_NOSYNC_THRESHOLD) {
-            if(diff <= -sync_threshold) {
-                delay = 0;
-            } else if(diff >= sync_threshold) {
-                delay = 2 * delay;
+        /* update delay to sync to audio if not master source */
+        if(is->av_sync_type != AV_SYNC_VIDEO_MASTER) {
+            ref_clock = get_master_clock(is);
+            diff = vp->pts - ref_clock;
+            /* Skip or repeat the frame. Take delay into account
+            FFPlay still doesn't "know if this is the best guess." */
+            sync_threshold = (delay > AV_SYNC_THRESHOLD) ? delay : AV_SYNC_THRESHOLD;
+            if(fabs(diff) < AV_NOSYNC_THRESHOLD) {
+                if(diff <= -sync_threshold) {
+                    delay = 0;
+                } else if(diff >= sync_threshold) {
+                    delay = 2 * delay;
+                }
             }
         }
         is->frame_timer += delay;
@@ -404,6 +431,10 @@ int readPacketThread(void *arg) {
     is->init = 0;
     is->videoStream = -1;
     is->audioStream = -1;
+    is->av_sync_type = DEFAULT_AV_SYNC_TYPE;
+    /* init averaging filter */
+    is->audio_diff_avg_coef  = exp(log(0.01) / AUDIO_DIFF_AVG_NB);
+    is->audio_diff_avg_count = 0;
 
     // Register all formats and codecs
     av_register_all();
@@ -659,6 +690,66 @@ int naSetup(JNIEnv *pEnv, jobject pObj, jobject pSurface,int pWidth,int pHeight)
     return 0;
 }
 
+/* Add or subtract samples to get a better sync, return new audio buffer size */
+int synchronize_audio(VideoState *is, short *samples, int samples_size, double pts) {
+    int n;
+    double ref_clock;
+
+    n = 2 * is->aCodecCtx->channels;
+
+    if(is->av_sync_type != AV_SYNC_AUDIO_MASTER) {
+        double diff, avg_diff;
+        int wanted_size, min_size, max_size /*, nb_samples */;
+
+        ref_clock = get_master_clock(is);
+        diff = get_audio_clock(is) - ref_clock;
+
+        if(diff < AV_NOSYNC_THRESHOLD) {
+            // accumulate the diffs
+            is->audio_diff_cum = diff + is->audio_diff_avg_coef
+            * is->audio_diff_cum;
+            if(is->audio_diff_avg_count < AUDIO_DIFF_AVG_NB) {
+                is->audio_diff_avg_count++;
+            } else {
+                avg_diff = is->audio_diff_cum * (1.0 - is->audio_diff_avg_coef);
+                if(fabs(avg_diff) >= is->audio_diff_threshold) {
+                    wanted_size = samples_size + ((int)(diff * is->aCodecCtx->sample_rate) * n);
+                    min_size = samples_size * ((100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100);
+                    max_size = samples_size * ((100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100);
+                    if(wanted_size < min_size) {
+                        wanted_size = min_size;
+                    } else if (wanted_size > max_size) {
+                        wanted_size = max_size;
+                    }
+                    if(wanted_size < samples_size) {
+                        /* remove samples */
+                        samples_size = wanted_size;
+                    } else if(wanted_size > samples_size) {
+                        uint8_t *samples_end, *q;
+                        int nb;
+
+                        /* add samples by copying final sample*/
+                        nb = (samples_size - wanted_size);
+                        samples_end = (uint8_t *)samples + samples_size - n;
+                        q = samples_end + n;
+                        while(nb > 0) {
+                            memcpy(q, samples_end, n);
+                            q += n;
+                            nb -= n;
+                        }
+                        samples_size = wanted_size;
+                    }
+                }
+            }
+        } else {
+            /* difference is TOO big; reset diff stuff */
+            is->audio_diff_avg_count = 0;
+            is->audio_diff_cum = 0;
+        }
+    }
+    return samples_size;
+}
+
 static int audio_decode_frame(VideoState *is,double *pts_ptr) {
     AVPacket *pkt = &is->audio_pkt;
     AVFrame *frame = &is->audio_frame;
@@ -783,6 +874,7 @@ jint naGetPcmBuffer(JNIEnv *pEnv, jobject pObj, jbyteArray buffer, jint len) {
 	            is->audio_buf_size = 1024; // arbitrary?
 	            memset(is->audio_buf, 0, is->audio_buf_size);
             } else {
+                audio_size = synchronize_audio(is, (int16_t *)is->audio_buf,audio_size, pts);
                 is->audio_buf_size = audio_size;
             }
             is->audio_buf_index = 0;
@@ -804,6 +896,7 @@ int getPcm(void **pcm, size_t *pcmSize) {
 
     VideoState *is = global_video_state;
     *pcmSize = audio_decode_frame(is,&pts);
+    *pcmSize = synchronize_audio(is, (int16_t *)is->audio_buf,*pcmSize, pts);
     *pcm = is->audio_buf;
 }
 

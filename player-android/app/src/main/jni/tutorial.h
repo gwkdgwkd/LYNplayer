@@ -19,8 +19,19 @@
 #define MAX_AUDIO_FRAME_SIZE 192000
 #define AV_SYNC_THRESHOLD 0.01
 #define AV_NOSYNC_THRESHOLD 10.0
+
+#define SAMPLE_CORRECTION_PERCENT_MAX 10
+#define AUDIO_DIFF_AVG_NB 20
+#define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER
+
 //#define USE_SWS_CTX 1
 //#define USE_AUDIO_TRACK 1
+
+enum {
+    AV_SYNC_AUDIO_MASTER,
+    AV_SYNC_VIDEO_MASTER,
+    AV_SYNC_EXTERNAL_MASTER,
+};
 
 typedef struct PacketQueue {
     AVPacketList *first_pkt, *last_pkt;
@@ -42,6 +53,8 @@ typedef struct VideoState {
     AVFormatContext *pFormatCtx;
     int             videoStream, audioStream;
 
+    int             av_sync_type;
+
     AVStream        *audio_st;
     AVCodecContext  	*aCodecCtx;
     PacketQueue     audioq;
@@ -53,6 +66,10 @@ typedef struct VideoState {
     uint8_t         *audio_pkt_data;
     int             audio_pkt_size;
     double         audio_clock;
+    double          audio_diff_cum; /* used for AV difference average computation */
+    double          audio_diff_avg_coef;
+    double          audio_diff_threshold;
+    int             audio_diff_avg_count;
 
     AVStream        *video_st;
     AVCodecContext  	*vCodecCtx;
@@ -67,6 +84,8 @@ typedef struct VideoState {
     double          frame_last_pts;
     double          frame_last_delay;
     double          video_clock; ///<pts of last decoded frame / predicted pts of next decoded frame
+    double          video_current_pts; ///<current displayed pts (different from video_clock if frame fifos are used)
+    int64_t         video_current_pts_time;  ///<time (av_gettime) at which we updated video_current_pts - used to have running video pts
 
     pthread_mutex_t       mutex;
     pthread_cond_t        cond;

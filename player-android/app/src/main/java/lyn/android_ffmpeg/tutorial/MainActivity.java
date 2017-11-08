@@ -22,12 +22,11 @@ import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
 import android.media.AudioTrack;
 import android.media.AudioFormat;
-import android.os.Handler;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static final String TAG = "android-ffmpeg-tutorial04";
 	private static final String FRAME_DUMP_FOLDER_PATH = Environment.getExternalStorageDirectory() 
-			+ File.separator + "android-ffmpeg-tutorial02";
+			+ File.separator + "android-ffmpeg-tutorial06";
 	
 	// video used to fill the width of the screen 
 	private static final String videoFileName = "1.mp4";  	//304x544
@@ -38,18 +37,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private SurfaceView mSurfaceView;
 	private AudioTrack audioTrack;
 	private int samplerate,channeltype,sampleformat,minbufsize;
-	private Handler handler = new Handler();
 	private boolean mUseAudioTrack = false;
+	public volatile boolean mThreadState = true;
 	private float Ratio;
 
-	private Runnable audioUpdateThread = new Runnable(){
+	private Thread audioUpdateThread = new Thread(){
 		public void run() {
-			byte[] pcm = new byte[minbufsize];
-			int dsize = naGetPcmBuffer(pcm,minbufsize);
-			if (audioTrack.write(pcm, 0, dsize) < dsize) {
-				Log.w(null, "Data not written completely");
+			while(mThreadState) {
+				byte[] pcm = new byte[minbufsize];
+				int dsize = naGetPcmBuffer(pcm, minbufsize);
+				if (audioTrack.write(pcm, 0, dsize) < dsize) {
+					Log.w(null, "Data not written completely");
+				}
 			}
-			handler.postDelayed(audioUpdateThread,50);
 		}
 	};
 	
@@ -77,7 +77,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 			public void onClick(View v) {
 				if(mUseAudioTrack) {
 					audioTrack.play();
-					handler.post(audioUpdateThread);
+					audioUpdateThread.start();
 				}
 				naPlay();
 			}
@@ -178,7 +178,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	@Override
 	public void surfaceDestroyed(SurfaceHolder holder) {
 		Log.d(TAG, "surfaceDestroyed");
-		handler.removeCallbacks(audioUpdateThread);
+		mThreadState = false;
 		naSetup(null, 0, 0);
 	}
 	

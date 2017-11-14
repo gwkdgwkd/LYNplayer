@@ -97,6 +97,7 @@ typedef struct VideoState {
     pthread_t      read_packet_tid;
     pthread_t      video_decode_tid;
     pthread_t      video_display_tid;
+    pthread_t      update_time_tid;
     char            filename[1024];
     int             quit;
     int             is_play;

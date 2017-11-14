@@ -2,6 +2,8 @@
 
 ANativeWindow* 		window;
 jobject				bitmap;
+static JavaVM *gs_jvm = NULL;
+static jobject gs_object = NULL;
 
 int64_t get_time(void)
 {
@@ -276,7 +278,7 @@ double get_video_clock(VideoState *is)
 }
 
 double get_external_clock(VideoState *is) {
-    return av_gettime() / 1000000.0;
+    return get_time() / 1000000.0;
 }
 
 double get_master_clock(VideoState *is) {
@@ -416,6 +418,43 @@ void videoDisplayThread(JNIEnv *pEnv) {
 	finish(pEnv,is);
 }
 
+void updateTimeThread() {
+    VideoState *is = global_video_state;
+
+    double pre_time = 0.0;
+    double now_time = 0.0;
+    char p_time[16] = {0};
+    char n_time[16] = {0};
+    double step = 1.0;
+
+    JNIEnv *env;
+    (*gs_jvm)->AttachCurrentThread(gs_jvm,(void **)&env, NULL);
+    jclass cls = (*env)->GetObjectClass(env,gs_object);
+    //jclass cls = (*env)->FindClass(env, "lyn/android_ffmpeg/tutorial/MainActivity");  // will die,why
+    jmethodID methodID = (*env)->GetMethodID(env, cls, "setNowTime", "(Ljava/lang/String;)V");
+
+    while(1) {
+        if(now_time - pre_time >= step + step) {
+            usleep(5000);
+            continue;
+        }else if(now_time - pre_time >= step || now_time == 0) {
+            sprintf(n_time,"%.0lf",now_time);
+            if(memcmp(p_time,n_time,strlen(n_time)) || now_time == 0) {
+                jstring jtime = (*env)->NewStringUTF(env, n_time);
+                (*env)->CallVoidMethod(env, gs_object, methodID, jtime);
+                (*env)->DeleteLocalRef(env,jtime);
+                memcpy(p_time,n_time,strlen(n_time));
+            }
+            pre_time = now_time;
+        }
+        usleep(95000);
+        now_time = get_master_clock(is);
+    }
+
+    (*env)->DeleteGlobalRef(env,gs_object);
+    (*gs_jvm)->DetachCurrentThread(gs_jvm);
+}
+
 int readPacketThread(void *arg) {
     AVCodec         *pVideoCodec = NULL;
     AVCodec         *pAudioCodec = NULL;
@@ -513,6 +552,7 @@ int readPacketThread(void *arg) {
     pthread_mutex_unlock(&is->mutex);
     pthread_create(&is->video_decode_tid, NULL, videoDecodeThread, is);
     pthread_create(&is->video_display_tid, NULL, videoDisplayThread, NULL);
+    pthread_create(&is->update_time_tid, NULL, updateTimeThread, NULL);
 
     while(av_read_frame(pFormatCtx, &packet)>=0 && !is->quit) {
         // Is this a packet from the video stream?
@@ -582,15 +622,16 @@ jintArray naGetVideoRes(JNIEnv *pEnv, jobject pObj) {
 	if (NULL == is->vCodecCtx) {
 		return NULL;
 	}
-	lRes = (*pEnv)->NewIntArray(pEnv, 2);
+	lRes = (*pEnv)->NewIntArray(pEnv, 3);
 	if (lRes == NULL) {
 		LOGI(1, "cannot allocate memory for video size");
 		return NULL;
 	}
-	jint lVideoRes[2];
+	jint lVideoRes[3];
 	lVideoRes[0] = is->vCodecCtx->width;
 	lVideoRes[1] = is->vCodecCtx->height;
-	(*pEnv)->SetIntArrayRegion(pEnv, lRes, 0, 2, lVideoRes);
+	lVideoRes[2] = is->video_st->duration * av_q2d(is->video_st->time_base);
+	(*pEnv)->SetIntArrayRegion(pEnv, lRes, 0, 3, lVideoRes);
 	return lRes;
 }
 
@@ -905,6 +946,9 @@ int getPcm(void **pcm, size_t *pcmSize) {
  */
 void naPlay(JNIEnv *pEnv, jobject pObj) {
     VideoState *is = global_video_state;
+
+    (*pEnv)->GetJavaVM(pEnv,&gs_jvm);
+    gs_object=(*pEnv)->NewGlobalRef(pEnv,pObj);
 
     pthread_mutex_lock(&is->mutex);
     is->is_play = 1;

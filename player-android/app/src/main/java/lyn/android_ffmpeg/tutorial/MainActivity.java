@@ -6,9 +6,11 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Point;
+import android.os.Message;
 import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
@@ -22,24 +24,53 @@ import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
 import android.media.AudioTrack;
 import android.media.AudioFormat;
+import java.lang.ref.WeakReference;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
-	private static final String TAG = "android-ffmpeg-tutorial04";
+	private static final String TAG = "android-ffmpeg-tutorial07";
 	private static final String FRAME_DUMP_FOLDER_PATH = Environment.getExternalStorageDirectory() 
-			+ File.separator + "android-ffmpeg-tutorial06";
+			+ File.separator + "android-ffmpeg-tutorial07";
 	
 	// video used to fill the width of the screen 
 	private static final String videoFileName = "1.mp4";  	//304x544
 	// video used to fill the height of the screen
 	//private static final String videoFileName = "2.mp4";   //480x208
 	//private static final String videoFileName = "1.flv";   //640x360
-	
+
 	private SurfaceView mSurfaceView;
 	private AudioTrack audioTrack;
 	private int samplerate,channeltype,sampleformat,minbufsize;
 	private boolean mUseAudioTrack = false;
 	public volatile boolean mThreadState = true;
 	private float Ratio;
+	private LynSeekBar mLynSeekBar;
+	private static final int MSG_PROGRESS_UPDATE = 0x110;
+
+	private static class LynHandler extends Handler{
+		private final WeakReference<MainActivity> mActivity;
+
+		public LynHandler(MainActivity activity){
+			mActivity = new WeakReference<MainActivity>(activity);
+		}
+
+		@Override
+		public void handleMessage(Message msg) {
+			MainActivity activity = mActivity.get();
+			if(activity==null){
+				super.handleMessage(msg);
+				return;
+			}
+			switch (msg.what) {
+				case MSG_PROGRESS_UPDATE:
+					activity.mLynSeekBar.setProgress(Integer.parseInt((String)msg.obj));
+					break;
+				default:
+					super.handleMessage(msg);
+					break;
+			}
+		}
+	}
+	private final LynHandler mHandler = new LynHandler(this);
 
 	private Thread audioUpdateThread = new Thread(){
 		public void run() {
@@ -82,6 +113,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 				naPlay();
 			}
 		});
+		mLynSeekBar = (LynSeekBar) findViewById(R.id.id_seekbar);
 	}
 	
 	private void updateSurfaceView(int pWidth, int pHeight) {
@@ -128,6 +160,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		}
 		Log.d(TAG, "width " + width + ",height:" + height);
 		updateSurfaceView(width, height);
+		mLynSeekBar.setMax(res[2]);
 	}
 
 	@Override
@@ -181,13 +214,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		mThreadState = false;
 		naSetup(null, 0, 0);
 	}
-	
+
+	public void setNowTime(String time) {
+		Message msg = Message.obtain();
+		msg.obj = time;
+		msg.what = MSG_PROGRESS_UPDATE;
+		mHandler.sendMessage(msg);
+	}
+
 	private static native int naInit(String pFileName); 
 	private static native int[] naGetVideoRes();
 	private static native int[] naGetAudioInfo();
 	private static native int naGetPcmBuffer(byte[] pcm,int len);
 	private static native int naSetup(Surface pSurface,int pWidth, int pHeight);
-	private static native void naPlay();
+	private native void naPlay();
 	private static native void naStop();
 
 	static {

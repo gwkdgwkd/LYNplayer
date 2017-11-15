@@ -7,7 +7,6 @@
         <attr name="seek_unreached_bar_height" format="dimension" />
         <attr name="seek_text_size" format="dimension" />
         <attr name="seek_text_color" format="color" />
-        <attr name="seek_text_offset" format="dimension" />
         <attr name="seek_text_visibility" format="enum">
             <enum name="visible" value="0" />
             <enum name="invisible" value="1" />

@@ -5,6 +5,7 @@ import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.widget.SeekBar;
 
@@ -14,9 +15,11 @@ public class LynSeekBar extends SeekBar
     private static final int DEFAULT_TEXT_SIZE = 10;
     private static final int DEFAULT_TEXT_COLOR = 0XFFFC00D1;
     private static final int DEFAULT_COLOR_UNREACHED_COLOR = 0xFFd3d6da;
+    private static final int DEFAULT_THUMB_COLOR = 0XFF00FFFF;
     private static final int DEFAULT_HEIGHT_REACHED_SEEK_BAR = 2;
     private static final int DEFAULT_HEIGHT_UNREACHED_SEEK_BAR = 2;
-    private static final int DEFAULT_SIZE_TEXT_OFFSET = 10;
+    private static final int DEFAULT_WIDTH_THUMB_SEEK_BAR = 4;
+    private static final int DEFAULT_HEIGHT_THUMB_SEEK_BAR = 10;
 
     /**
      * painter of all drawing things
@@ -30,11 +33,6 @@ public class LynSeekBar extends SeekBar
      * size of text (sp)
      */
     protected int mTextSize = sp2px(DEFAULT_TEXT_SIZE);
-
-    /**
-     * offset of draw seek
-     */
-    protected int mTextOffset = dp2px(DEFAULT_SIZE_TEXT_OFFSET);
 
     /**
      * height of reached seek bar
@@ -53,6 +51,18 @@ public class LynSeekBar extends SeekBar
      * height of unreached seek bar
      */
     protected int mUnReachedSeekBarHeight = dp2px(DEFAULT_HEIGHT_UNREACHED_SEEK_BAR);
+    /**
+     * color of thumb seek bar
+     */
+    protected int mThumbColor = DEFAULT_THUMB_COLOR;
+    /**
+     * width of thumb seek bar
+     */
+    protected int mThumbSeekBarWidth = dp2px(DEFAULT_WIDTH_THUMB_SEEK_BAR);
+    /**
+     * width of thumb seek bar
+     */
+    protected int mThumbSeekBarHeight = dp2px(DEFAULT_HEIGHT_THUMB_SEEK_BAR);
     /**
      * view width except padding
      */
@@ -144,11 +154,6 @@ public class LynSeekBar extends SeekBar
                 .getDimension(
                         R.styleable.LynSeekBar_seek_unreached_bar_height,
                         mUnReachedSeekBarHeight);
-        mTextOffset = (int) attributes
-                .getDimension(
-                        R.styleable.LynSeekBar_seek_text_offset,
-                        mTextOffset);
-
         int textVisible = attributes
                 .getInt(R.styleable.LynSeekBar_seek_text_visibility,
                         VISIBLE);
@@ -159,58 +164,90 @@ public class LynSeekBar extends SeekBar
         attributes.recycle();
     }
 
+    public static String secToTime(int time) {
+        String timeStr = null;
+        int hour = 0;
+        int minute = 0;
+        int second = 0;
+        if (time <= 0)
+            return "00:00";
+        else {
+            minute = time / 60;
+            if (minute < 60) {
+                second = time % 60;
+                timeStr = unitFormat(minute) + ":" + unitFormat(second);
+            } else {
+                hour = minute / 60;
+                if (hour > 99)
+                    return "99:59:59";
+                minute = minute % 60;
+                second = time - hour * 3600 - minute * 60;
+                timeStr = unitFormat(hour) + ":" + unitFormat(minute) + ":" + unitFormat(second);
+            }
+        }
+        return timeStr;
+    }
+
+    public static String unitFormat(int i) {
+        String retStr = null;
+        if (i >= 0 && i < 10)
+            retStr = "0" + Integer.toString(i);
+        else
+            retStr = "" + i;
+        return retStr;
+    }
+
     @Override
     protected synchronized void onDraw(Canvas canvas)
     {
         canvas.save();
         canvas.translate(getPaddingLeft(), getHeight() / 2);
 
-        boolean noNeedBg = false;
         float radio = getProgress() * 1.0f / getMax();
         float progressPosX = (int) (mRealWidth * radio);
-        String text = getProgress() + "%";
+        String text = secToTime(getProgress());
         // mPaint.getTextBounds(text, 0, text.length(), mTextBound);
 
         float textWidth = mPaint.measureText(text);
         float textHeight = (mPaint.descent() + mPaint.ascent()) / 2;
-
-        if (progressPosX + textWidth > mRealWidth)
-        {
-            progressPosX = mRealWidth - textWidth;
-            noNeedBg = true;
-        }
+        float textHeightPos = textHeight + mPaint.ascent();
 
         // draw reached bar
-        float endX = progressPosX - mTextOffset / 2;
+        float endX = progressPosX;
         if (endX > 0)
         {
             mPaint.setColor(mReachedBarColor);
             mPaint.setStrokeWidth(mReachedSeekBarHeight);
             canvas.drawLine(0, 0, endX, 0, mPaint);
         }
-        // draw seek bar
-        // measure text bound
-        if (mIfDrawText)
-        {
-            mPaint.setColor(mTextColor);
-            canvas.drawText(text, progressPosX, -textHeight, mPaint);
-        }
+
+        // draw thumb
+        mPaint.setColor(mThumbColor);
+        mPaint.setStrokeWidth(mThumbSeekBarWidth);
+        canvas.drawLine(endX, -mThumbSeekBarHeight/2, endX, mThumbSeekBarHeight/2, mPaint);
 
         // draw unreached bar
-        if (!noNeedBg)
-        {
-            float start = progressPosX + mTextOffset / 2 + textWidth;
-            mPaint.setColor(mUnReachedBarColor);
-            mPaint.setStrokeWidth(mUnReachedSeekBarHeight);
-            canvas.drawLine(start, 0, mRealWidth, 0, mPaint);
-        }
+        float start = progressPosX;
+        mPaint.setColor(mUnReachedBarColor);
+        mPaint.setStrokeWidth(mUnReachedSeekBarHeight);
+        canvas.drawLine(start, 0, mRealWidth, 0, mPaint);
 
+        // draw text
         if (mIfDrawText) {
-            String endText = getMax() + "s";
-            float endTextWidth = mPaint.measureText(text);
-            float endTextHeight = (mPaint.descent() + mPaint.ascent()) / 2;
             mPaint.setColor(mTextColor);
-            canvas.drawText(endText, mRealWidth - endTextWidth, -endTextHeight, mPaint);
+            String endText = secToTime(getMax());
+            float endTextWidth = mPaint.measureText(endText);
+            float delimitWidth = mPaint.measureText("/");
+            if (progressPosX + endTextWidth + delimitWidth >= mRealWidth){
+                endText = text + "/" + endText;
+                endTextWidth = mPaint.measureText(endText);
+            } else {
+                mPaint.setColor(mTextColor);
+                float realPosX = progressPosX - textWidth + mThumbSeekBarWidth/2;
+                canvas.drawText(text, realPosX > 0 ? realPosX : 0, -textHeightPos, mPaint);
+
+            }
+            canvas.drawText(endText, mRealWidth - endTextWidth, -textHeightPos, mPaint);
         }
 
         canvas.restore();

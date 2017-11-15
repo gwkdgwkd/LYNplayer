@@ -435,7 +435,7 @@ void updateTimeThread() {
 
     while(1) {
         if(now_time - pre_time >= step + step) {
-            usleep(5000);
+            usleep(500);
             continue;
         }else if(now_time - pre_time >= step || now_time == 0) {
             sprintf(n_time,"%.0lf",now_time);
@@ -444,10 +444,11 @@ void updateTimeThread() {
                 (*env)->CallVoidMethod(env, gs_object, methodID, jtime);
                 (*env)->DeleteLocalRef(env,jtime);
                 memcpy(p_time,n_time,strlen(n_time));
+                usleep(95000);
             }
             pre_time = now_time;
         }
-        usleep(95000);
+        usleep(200);
         now_time = get_master_clock(is);
     }
 

@@ -19,7 +19,6 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.Button;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
 import android.media.AudioTrack;
@@ -44,6 +43,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	public volatile boolean mThreadState = true;
 	private float Ratio;
 	private LynSeekBar mLynSeekBar;
+	private LynButton mLynButtonStart;
 	private static final int MSG_PROGRESS_UPDATE = 0x110;
 
 	private static class LynHandler extends Handler{
@@ -98,12 +98,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		}
 		//copy input video file from assets folder to directory
 		Utils.copyAssets(this, videoFileName, FRAME_DUMP_FOLDER_PATH);
-
 		naInit(FRAME_DUMP_FOLDER_PATH + File.separator + videoFileName);
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
-		Button btnStart = (Button) this.findViewById(R.id.buttonStart);
-		btnStart.setOnClickListener(new View.OnClickListener() {
+		mLynSeekBar = (LynSeekBar) findViewById(R.id.id_seekbar);
+		mLynButtonStart = (LynButton) findViewById(R.id.buttonStart);
+		mLynButtonStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
 				if(mUseAudioTrack) {
@@ -113,7 +113,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 				naPlay();
 			}
 		});
-		mLynSeekBar = (LynSeekBar) findViewById(R.id.id_seekbar);
 	}
 	
 	private void updateSurfaceView(int pWidth, int pHeight) {

@@ -22,24 +22,39 @@ public class LynButton extends Button {
 
     private Paint mPaint;
 
+    private Boolean mIsPlay = false;
+
     public LynButton(Context context, AttributeSet attrs) {
         super(context, attrs);
         mPaint = new Paint();
+    }
+
+    public void changeIsPlay() {
+        mIsPlay = !mIsPlay;
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         float width = getMeasuredWidth();
         float height = getMeasuredHeight();
-        float heightStep = height/4;
-        float widthLen = heightStep*(float)1.732;
-        float widthStep = (width - widthLen)/2;
-        float pts[] = {widthStep, heightStep, widthStep, heightStep*3,
-                       widthStep, heightStep, widthLen+widthStep, heightStep*2,
-                       widthStep, heightStep*3, widthLen+widthStep, heightStep*2};
         mPaint.setColor(mButtonLineColor);
         mPaint.setStrokeWidth(mButtonLineWidth);
-        canvas.drawLines(pts,mPaint);
+        if(mIsPlay == false) {
+            float heightStep = height / 4;
+            float widthLen = heightStep * (float) 1.732;
+            float widthStep = (width - widthLen) / 2;
+            float pts[] = {widthStep, heightStep, widthStep, heightStep * 3,
+                    widthStep, heightStep, widthLen + widthStep, heightStep * 2,
+                    widthStep, heightStep * 3, widthLen + widthStep, heightStep * 2};
+            canvas.drawLines(pts,mPaint);
+        } else {
+            float heightStep = height / 4;
+            float widthLen = heightStep;
+            float widthStep = (width - widthLen) / 2;
+            float pts[] = {widthStep, heightStep, widthStep, heightStep * 3,
+                    widthLen + widthStep, heightStep, widthLen + widthStep, heightStep * 3};
+            canvas.drawLines(pts,mPaint);
+        }
     }
     /**
      * sp 2 px

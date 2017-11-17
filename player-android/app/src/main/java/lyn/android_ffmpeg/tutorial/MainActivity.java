@@ -106,6 +106,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		mLynButtonStart.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
+				mLynButtonStart.changeIsPlay();
+				mLynButtonStart.invalidate();
 				if(mUseAudioTrack) {
 					audioTrack.play();
 					audioUpdateThread.start();

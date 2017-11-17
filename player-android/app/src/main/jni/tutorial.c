@@ -139,6 +139,12 @@ void videoDecodeThread(void *arg) {
     decodedFrame = av_frame_alloc();
 
     while(!is->quit) {
+        pthread_mutex_lock(&is->paused_mutex);
+        while(is->is_paused) {
+            pthread_cond_wait(&is->paused_cond, &is->paused_mutex);
+        }
+        pthread_mutex_unlock(&is->paused_mutex);
+
         if(packet_queue_get(&is->videoq, &packet, 1) < 0) {
             // means we quit getting packets
             break;
@@ -434,6 +440,11 @@ void updateTimeThread() {
     jmethodID methodID = (*env)->GetMethodID(env, cls, "setNowTime", "(Ljava/lang/String;)V");
 
     while(1) {
+        pthread_mutex_lock(&is->paused_mutex);
+        while(is->is_paused) {
+            pthread_cond_wait(&is->paused_cond, &is->paused_mutex);
+        }
+        pthread_mutex_unlock(&is->paused_mutex);
         if(now_time - pre_time >= step + step) {
             usleep(500);
             continue;
@@ -582,6 +593,8 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
     pthread_mutex_init(&is->decode_mutex, NULL);
     pthread_mutex_init(&is->mutex, NULL);
     pthread_cond_init(&is->cond, NULL);
+    pthread_mutex_init(&is->paused_mutex, NULL);
+    pthread_cond_init(&is->paused_cond, NULL);
     pthread_create(&is->read_packet_tid, NULL, readPacketThread, is);
 }
 
@@ -943,6 +956,23 @@ int getPcm(void **pcm, size_t *pcmSize) {
 }
 
 /**
+ * pause the video playback
+ */
+void naPause(JNIEnv *pEnv, jobject pObj, jint pause) {
+    VideoState *is = global_video_state;
+
+    if(!pause) {
+        pthread_mutex_lock(&is->paused_mutex);
+        is->video_current_pts_time = get_time();
+        is->is_paused = pause;
+        pthread_cond_broadcast(&is->paused_cond);
+        pthread_mutex_unlock(&is->paused_mutex);
+    } else {
+        is->is_paused = pause;
+    }
+}
+
+/**
  * start the video playback
  */
 void naPlay(JNIEnv *pEnv, jobject pObj) {
@@ -1003,9 +1033,9 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	nm[index].signature = "()V";
 	nm[index++].fnPtr = (void*)naPlay;
 
-	nm[index].name = "naStop";
-	nm[index].signature = "()V";
-	nm[index++].fnPtr = (void*)naStop;
+	nm[index].name = "naPause";
+	nm[index].signature = "(I)V";
+	nm[index++].fnPtr = (void*)naPause;
 
 	nm[index].name = "naGetPcmBuffer";
 	nm[index].signature = "([BI)I";

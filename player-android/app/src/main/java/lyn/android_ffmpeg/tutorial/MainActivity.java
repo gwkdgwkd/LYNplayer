@@ -41,6 +41,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private int samplerate,channeltype,sampleformat,minbufsize;
 	private boolean mUseAudioTrack = false;
 	public volatile boolean mThreadState = true;
+	private boolean isPlayStart = false;
+	private int isPaused = 0;
 	private float Ratio;
 	private LynSeekBar mLynSeekBar;
 	private LynButton mLynButtonStart;
@@ -108,11 +110,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 			public void onClick(View v) {
 				mLynButtonStart.changeIsPlay();
 				mLynButtonStart.invalidate();
-				if(mUseAudioTrack) {
-					audioTrack.play();
-					audioUpdateThread.start();
+				if(isPlayStart == false) {
+					if (mUseAudioTrack) {
+						audioTrack.play();
+						audioUpdateThread.start();
+					}
+					naPlay();
+					isPlayStart = true;
+				} else {
+					isPaused = (isPaused == 0 ? 1 : 0);
+					naPause(isPaused);
 				}
-				naPlay();
 			}
 		});
 	}
@@ -229,7 +237,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static native int naGetPcmBuffer(byte[] pcm,int len);
 	private static native int naSetup(Surface pSurface,int pWidth, int pHeight);
 	private native void naPlay();
-	private static native void naStop();
+	private static native void naPause(int pause);
 
 	static {
 		System.loadLibrary("avutil");

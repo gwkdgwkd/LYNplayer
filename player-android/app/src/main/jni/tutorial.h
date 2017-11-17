@@ -93,6 +93,8 @@ typedef struct VideoState {
     pthread_cond_t        pictq_cond;
     pthread_mutex_t       display_mutex;
     pthread_mutex_t       decode_mutex;
+    pthread_mutex_t       paused_mutex;
+    pthread_cond_t        paused_cond;
 
     pthread_t      read_packet_tid;
     pthread_t      video_decode_tid;
@@ -101,6 +103,7 @@ typedef struct VideoState {
     char            filename[1024];
     int             quit;
     int             is_play;
+    int             is_paused;
     int             init;
     float           ratio;
     int 			width;

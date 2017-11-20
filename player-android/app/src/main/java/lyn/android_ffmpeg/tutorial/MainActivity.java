@@ -24,6 +24,8 @@ import android.widget.RelativeLayout.LayoutParams;
 import android.media.AudioTrack;
 import android.media.AudioFormat;
 import java.lang.ref.WeakReference;
+import android.widget.SeekBar;
+import android.widget.SeekBar.OnSeekBarChangeListener;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static final String TAG = "android-ffmpeg-tutorial07";
@@ -104,6 +106,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		mSurfaceView = (SurfaceView)findViewById(R.id.surfaceview);
 		mSurfaceView.getHolder().addCallback(this);
 		mLynSeekBar = (LynSeekBar) findViewById(R.id.id_seekbar);
+		mLynSeekBar.setOnSeekBarChangeListener(new OnSeekBarChangeListener() {
+			@Override
+			public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+
+			}
+
+			@Override
+			public void onStartTrackingTouch(SeekBar seekBar) {
+
+			}
+
+			@Override
+			public void onStopTrackingTouch(SeekBar seekBar) {
+
+			}
+		});
+
 		mLynButtonStart = (LynButton) findViewById(R.id.buttonStart);
 		mLynButtonStart.setOnClickListener(new View.OnClickListener() {
 			@Override

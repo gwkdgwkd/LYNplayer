@@ -279,6 +279,7 @@ double get_audio_clock(VideoState *is) {
 double get_video_clock(VideoState *is)
 {
     double delta;
+
     delta = (get_time() - is->video_current_pts_time) / 1000000.0;
     return is->video_current_pts + delta;
 }
@@ -761,8 +762,7 @@ int synchronize_audio(VideoState *is, short *samples, int samples_size, double p
 
         if(diff < AV_NOSYNC_THRESHOLD) {
             // accumulate the diffs
-            is->audio_diff_cum = diff + is->audio_diff_avg_coef
-            * is->audio_diff_cum;
+            is->audio_diff_cum = diff + is->audio_diff_avg_coef * is->audio_diff_cum;
             if(is->audio_diff_avg_count < AUDIO_DIFF_AVG_NB) {
                 is->audio_diff_avg_count++;
             } else {
@@ -950,8 +950,10 @@ int getPcm(void **pcm, size_t *pcmSize) {
     double pts;
 
     VideoState *is = global_video_state;
-    *pcmSize = audio_decode_frame(is,&pts);
-    *pcmSize = synchronize_audio(is, (int16_t *)is->audio_buf,*pcmSize, pts);
+    do {
+        *pcmSize = audio_decode_frame(is,&pts);
+        *pcmSize = synchronize_audio(is, (int16_t *)is->audio_buf,*pcmSize, pts);
+    }while(*pcmSize == 0 && !is->quit);
     *pcm = is->audio_buf;
 }
 

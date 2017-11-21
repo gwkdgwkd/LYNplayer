@@ -817,6 +817,12 @@ static int audio_decode_frame(VideoState *is,double *pts_ptr) {
     int n;
 
     for(;;) {
+        pthread_mutex_lock(&is->paused_mutex);
+        while(is->is_paused) {
+            pthread_cond_wait(&is->paused_cond, &is->paused_mutex);
+        }
+        pthread_mutex_unlock(&is->paused_mutex);
+
         while(is->audio_pkt_size > 0) {
             int got_frame = 0;
             len1 = avcodec_decode_audio4(is->aCodecCtx, frame, &got_frame, pkt);
@@ -968,7 +974,6 @@ void naPause(JNIEnv *pEnv, jobject pObj, jint pause) {
         gettimeofday(&resume, NULL);
         is->total_paused_time += (int64_t)(resume.tv_sec - paused.tv_sec) * 1000000 + (resume.tv_usec - paused.tv_usec);
         pthread_mutex_lock(&is->paused_mutex);
-        //is->video_current_pts_time = get_time();
         is->is_paused = pause;
         pthread_cond_broadcast(&is->paused_cond);
         pthread_mutex_unlock(&is->paused_mutex);

@@ -86,6 +86,7 @@ typedef struct VideoState {
     double          video_clock; ///<pts of last decoded frame / predicted pts of next decoded frame
     double          video_current_pts; ///<current displayed pts (different from video_clock if frame fifos are used)
     int64_t         video_current_pts_time;  ///<time (av_gettime) at which we updated video_current_pts - used to have running video pts
+    int64_t         total_paused_time;
 
     pthread_mutex_t       mutex;
     pthread_cond_t        cond;

@@ -9,7 +9,7 @@ int64_t get_time(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+    return ((int64_t)tv.tv_sec * 1000000 + tv.tv_usec) - global_video_state->total_paused_time;
 }
 
 static void packet_queue_init(PacketQueue *q) {
@@ -962,15 +962,19 @@ int getPcm(void **pcm, size_t *pcmSize) {
  */
 void naPause(JNIEnv *pEnv, jobject pObj, jint pause) {
     VideoState *is = global_video_state;
+    static struct timeval paused,resume;
 
     if(!pause) {
+        gettimeofday(&resume, NULL);
+        is->total_paused_time += (int64_t)(resume.tv_sec - paused.tv_sec) * 1000000 + (resume.tv_usec - paused.tv_usec);
         pthread_mutex_lock(&is->paused_mutex);
-        is->video_current_pts_time = get_time();
+        //is->video_current_pts_time = get_time();
         is->is_paused = pause;
         pthread_cond_broadcast(&is->paused_cond);
         pthread_mutex_unlock(&is->paused_mutex);
     } else {
         is->is_paused = pause;
+        gettimeofday(&paused, NULL);
     }
 }
 

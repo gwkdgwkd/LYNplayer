@@ -47,6 +47,7 @@ typedef struct VideoPicture {
     int allocated;
     int id;
     double pts;
+    int seekFlag;
 } VideoPicture;
 
 typedef struct VideoState {
@@ -96,6 +97,8 @@ typedef struct VideoState {
     pthread_mutex_t       decode_mutex;
     pthread_mutex_t       paused_mutex;
     pthread_cond_t        paused_cond;
+    pthread_mutex_t       seek_mutex;
+    pthread_cond_t        seek_cond;
 
     pthread_t      read_packet_tid;
     pthread_t      video_decode_tid;
@@ -110,10 +113,16 @@ typedef struct VideoState {
     int 			width;
     int 			height;
 
+    int seeking;
+    int seek_req;
+    int seek_flags;
+    int64_t seek_pos;
+
     AVIOContext     *io_context;
     struct SwsContext *sws_ctx;
 } VideoState;
 
 VideoState *global_video_state;
+AVPacket flush_pkt;
 
 int getPcm(void **pcm, size_t *pcmSize);

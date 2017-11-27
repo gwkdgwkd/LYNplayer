@@ -107,6 +107,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 		mSurfaceView.getHolder().addCallback(this);
 		mLynSeekBar = (LynSeekBar) findViewById(R.id.id_seekbar);
 		mLynSeekBar.setOnSeekBarChangeListener(new OnSeekBarChangeListener() {
+			double pos;
+			public void seek(SeekBar seekBar) {
+				mLynButtonStart.changeIsPlay();
+				mLynButtonStart.invalidate();
+				pos = seekBar.getProgress();
+				isPaused = (isPaused == 0 ? 1 : 0);
+				naSeekTo(pos,isPaused);
+			}
+
 			@Override
 			public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
 
@@ -114,12 +123,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
 			@Override
 			public void onStartTrackingTouch(SeekBar seekBar) {
-
+				seek(seekBar);
 			}
 
 			@Override
 			public void onStopTrackingTouch(SeekBar seekBar) {
-
+				seek(seekBar);
 			}
 		});
 
@@ -143,7 +152,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 			}
 		});
 	}
-	
+
 	private void updateSurfaceView(int pWidth, int pHeight) {
 		//update surfaceview dimension, this will cause the native window to change
 		RelativeLayout.LayoutParams params = (LayoutParams) mSurfaceView.getLayoutParams();
@@ -257,6 +266,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 	private static native int naSetup(Surface pSurface,int pWidth, int pHeight);
 	private native void naPlay();
 	private static native void naPause(int pause);
+	private static native void naSeekTo(double incr,int flag);
 
 	static {
 		System.loadLibrary("avutil");

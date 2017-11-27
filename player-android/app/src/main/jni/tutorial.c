@@ -20,7 +20,7 @@ static void packet_queue_init(PacketQueue *q) {
 
 static int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     AVPacketList *pkt1;
-    if(av_dup_packet(pkt) < 0) {
+    if(pkt != &flush_pkt && av_dup_packet(pkt) < 0) {
         return -1;
     }
     pkt1 = av_malloc(sizeof(AVPacketList));
@@ -79,7 +79,23 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
     return ret;
 }
 
-int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeight, int frameId, double pts) {
+static void packet_queue_flush(PacketQueue *q) {
+    AVPacketList *pkt, *pkt1;
+
+    pthread_mutex_lock(&q->mutex);
+    for(pkt = q->first_pkt; pkt != NULL; pkt = pkt1) {
+        pkt1 = pkt->next;
+        av_free_packet(&pkt->pkt);
+        av_freep(&pkt);
+    }
+    q->last_pkt = NULL;
+    q->first_pkt = NULL;
+    q->nb_packets = 0;
+    q->size = 0;
+    pthread_mutex_unlock(&q->mutex);
+}
+
+int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeight, int frameId, double pts, int seekFlag) {
     VideoPicture *vp;
     /* wait until we have space for a new pic */
     pthread_mutex_lock(&is->pictq_mutex);
@@ -96,6 +112,7 @@ int queue_picture(VideoState *is, AVFrame *pFrame, int frameWidth, int frameHeig
     vp->height = frameHeight;
     vp->id = frameId;
     vp->pts = pts;
+    vp->seekFlag = seekFlag;
     /* now we inform our display thread that we have a pic ready */
     if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
         is->pictq_windex = 0;
@@ -132,6 +149,7 @@ void videoDecodeThread(void *arg) {
 	int            			frameFinished;
 	int            			width,height;
 	double         	    pts;
+	int                    seekFlag = 0;
     //struct timeval start;
     //struct timeval end;
     //float time_use=0;
@@ -149,6 +167,11 @@ void videoDecodeThread(void *arg) {
             // means we quit getting packets
             break;
         }
+        if(packet.data == flush_pkt.data) {
+            avcodec_flush_buffers(is->video_st->codec);
+            seekFlag = 1;
+            continue;
+        }
         pts = 0;
         //gettimeofday(&start,NULL); //gettimeofday(&start,&tz);结果一样
         // Decode video frame
@@ -161,7 +184,8 @@ void videoDecodeThread(void *arg) {
             pts = 0;
         }
         pts *= av_q2d(is->video_st->time_base);
-
+        //if(packet.flags & AV_PKT_FLAG_KEY)    // key frame ok
+        //if(frameFinished && decodedFrame->key_frame)     // all frame is key frame, why?
         // Did we get a video frame?
         if(frameFinished && !is->quit) {
             /* save frame after decode to yuv file
@@ -226,9 +250,10 @@ void videoDecodeThread(void *arg) {
                 fclose(fp);
             }//*/
             pts = synchronize_video(is, decodedFrame, pts);
-            if(queue_picture(is, is->frameRGBA,width,height,i,pts) < 0) {
+            if(queue_picture(is, is->frameRGBA,width,height,i,pts,seekFlag) < 0) {
                 break;
             }
+            seekFlag = 0;
             i++;
             av_free_packet(&packet);
         }
@@ -336,6 +361,13 @@ void videoDisplayThread(JNIEnv *pEnv) {
         is->video_current_pts = vp->pts;
         is->video_current_pts_time = get_time();
 
+        if(1 == vp->seekFlag) {
+            pthread_mutex_lock(&is->seek_mutex);
+            is->seeking = 0;
+            pthread_cond_signal(&is->seek_cond);
+            pthread_mutex_unlock(&is->seek_mutex);
+        }
+
         delay = vp->pts - is->frame_last_pts; /* the pts from last time */
         if(delay <= 0 || delay >= 1.0) {
             /* if incorrect delay, use previous one */
@@ -433,6 +465,7 @@ void updateTimeThread() {
     char p_time[16] = {0};
     char n_time[16] = {0};
     double step = 1.0;
+    int count = 0;
 
     JNIEnv *env;
     (*gs_jvm)->AttachCurrentThread(gs_jvm,(void **)&env, NULL);
@@ -446,6 +479,14 @@ void updateTimeThread() {
             pthread_cond_wait(&is->paused_cond, &is->paused_mutex);
         }
         pthread_mutex_unlock(&is->paused_mutex);
+
+        pthread_mutex_lock(&is->seek_mutex);
+        while(is->seeking) {
+            pthread_cond_wait(&is->seek_cond, &is->seek_mutex);
+            pre_time = now_time = get_master_clock(is);
+        }
+        pthread_mutex_unlock(&is->seek_mutex);
+
         if(now_time - pre_time >= step + step) {
             usleep(500);
             continue;
@@ -567,15 +608,43 @@ int readPacketThread(void *arg) {
     pthread_create(&is->video_display_tid, NULL, videoDisplayThread, NULL);
     pthread_create(&is->update_time_tid, NULL, updateTimeThread, NULL);
 
-    while(av_read_frame(pFormatCtx, &packet)>=0 && !is->quit) {
-        // Is this a packet from the video stream?
-        if(packet.stream_index == is->videoStream) {
-            packet_queue_put(&is->videoq, &packet);
-        } else if (packet.stream_index == is->audioStream) {
-            packet_queue_put(&is->audioq, &packet);
-        } else {
-            // Free the packet that was allocated by av_read_frame
-            av_free_packet(&packet);
+    while(!is->quit) {
+        // seek stuff goes here
+        if(is->seek_req) {
+            int stream_index = -1;
+            int64_t seek_target = is->seek_pos;
+            if(is->videoStream >= 0) {
+                stream_index = is->videoStream;
+            } else if(is->audioStream >= 0) {
+                stream_index = is->audioStream;
+            }
+            if(stream_index >= 0){
+                seek_target = av_rescale_q(seek_target, AV_TIME_BASE_Q, pFormatCtx->streams[stream_index]->time_base);
+            }
+            if(av_seek_frame(is->pFormatCtx, stream_index, seek_target, is->seek_flags) < 0) {
+                LOGE("%s: error while seeking\n", is->pFormatCtx->filename);
+            } else {
+                if(is->audioStream >= 0) {
+                    packet_queue_flush(&is->audioq);
+                    packet_queue_put(&is->audioq, &flush_pkt);
+	            }
+                if(is->videoStream >= 0) {
+                    packet_queue_flush(&is->videoq);
+                    packet_queue_put(&is->videoq, &flush_pkt);
+                }
+            }
+            is->seek_req = 0;
+        }
+        if(av_read_frame(pFormatCtx, &packet)>=0) {
+            // Is this a packet from the video stream?
+            if(packet.stream_index == is->videoStream) {
+                packet_queue_put(&is->videoq, &packet);
+            } else if (packet.stream_index == is->audioStream) {
+                packet_queue_put(&is->audioq, &packet);
+            } else {
+                // Free the packet that was allocated by av_read_frame
+                av_free_packet(&packet);
+            }
         }
     }
     return 0;
@@ -596,6 +665,8 @@ jint naInit(JNIEnv *pEnv, jobject pObj, jstring pFileName) {
     pthread_cond_init(&is->cond, NULL);
     pthread_mutex_init(&is->paused_mutex, NULL);
     pthread_cond_init(&is->paused_cond, NULL);
+    pthread_mutex_init(&is->seek_mutex, NULL);
+    pthread_cond_init(&is->seek_cond, NULL);
     pthread_create(&is->read_packet_tid, NULL, readPacketThread, is);
 }
 
@@ -908,6 +979,10 @@ static int audio_decode_frame(VideoState *is,double *pts_ptr) {
         if(packet_queue_get(&is->audioq, pkt, 1) < 0) {
             return -1;
         }
+        if(pkt->data == flush_pkt.data) {
+            avcodec_flush_buffers(is->audio_st->codec);
+            continue;
+        }
         is->audio_pkt_data = pkt->data;
         is->audio_pkt_size = pkt->size;
         /* if update, update the audio clock w/pts */
@@ -983,6 +1058,34 @@ void naPause(JNIEnv *pEnv, jobject pObj, jint pause) {
     }
 }
 
+void stream_seek(VideoState *is, int64_t pos, int rel) {
+    if(!is->seek_req) {
+        is->seek_pos = pos;
+        //is->seek_flags = rel < 0 ? AVSEEK_FLAG_BACKWARD : 0;
+        is->seek_flags = AVSEEK_FLAG_BACKWARD;
+        is->seek_req = 1;
+    }
+}
+
+/**
+ * video seek to
+ */
+void naSeekTo(JNIEnv *pEnv, jobject pObj, jdouble pos, jint flag) {
+    VideoState *is = global_video_state;
+    static double start,end;
+
+    naPause(pEnv,pObj,flag);
+    if(is) {
+        if(!flag) {
+            end = pos;
+            stream_seek(is, (int64_t)((get_master_clock(is) + end - start) * AV_TIME_BASE), start < end ? 1:-1);
+        } else {
+            is->seeking = 1;
+            start = pos;
+        }
+    }
+}
+
 /**
  * start the video playback
  */
@@ -1022,7 +1125,7 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	}
 
 	int index = 0;
-	int nmMax = 8;
+	int nmMax = 9;
 	JNINativeMethod nm[nmMax];
 	nm[index].name = "naInit";
 	nm[index].signature = "(Ljava/lang/String;)I";
@@ -1051,6 +1154,10 @@ jint JNI_OnLoad(JavaVM* pVm, void* reserved) {
 	nm[index].name = "naGetPcmBuffer";
 	nm[index].signature = "([BI)I";
 	nm[index++].fnPtr = (void*)naGetPcmBuffer;
+
+	nm[index].name = "naSeekTo";
+	nm[index].signature = "(DI)V";
+	nm[index++].fnPtr = (void*)naSeekTo;
 
 	jclass cls = (*env)->FindClass(env, "lyn/android_ffmpeg/tutorial/MainActivity");
 	//Register methods with env->RegisterNatives.

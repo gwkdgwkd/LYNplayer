@@ -180,6 +180,13 @@ void videoDecodeThread(void *arg) {
         //time_use=(end.tv_sec-start.tv_sec)*1000000+(end.tv_usec-start.tv_usec);//微秒
         //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
 
+#if USE_ACCURACY_SEEK
+        if(1 == seekFlag && packet.pts < is->seek_target) {
+            //accurate positioning, wrong location packages are discarded
+            continue;
+        }
+#endif
+
         if((pts = av_frame_get_best_effort_timestamp(decodedFrame)) == AV_NOPTS_VALUE) {
             pts = 0;
         }
@@ -612,16 +619,16 @@ int readPacketThread(void *arg) {
         // seek stuff goes here
         if(is->seek_req) {
             int stream_index = -1;
-            int64_t seek_target = is->seek_pos;
+            is->seek_target = is->seek_pos;
             if(is->videoStream >= 0) {
                 stream_index = is->videoStream;
             } else if(is->audioStream >= 0) {
                 stream_index = is->audioStream;
             }
             if(stream_index >= 0){
-                seek_target = av_rescale_q(seek_target, AV_TIME_BASE_Q, pFormatCtx->streams[stream_index]->time_base);
+                is->seek_target = av_rescale_q(is->seek_target, AV_TIME_BASE_Q, pFormatCtx->streams[stream_index]->time_base);
             }
-            if(av_seek_frame(is->pFormatCtx, stream_index, seek_target, is->seek_flags) < 0) {
+            if(av_seek_frame(is->pFormatCtx, stream_index, is->seek_target, is->seek_flags) < 0) {
                 LOGE("%s: error while seeking\n", is->pFormatCtx->filename);
             } else {
                 if(is->audioStream >= 0) {
@@ -1078,7 +1085,11 @@ void naSeekTo(JNIEnv *pEnv, jobject pObj, jdouble pos, jint flag) {
     if(is) {
         if(!flag) {
             end = pos;
+#if USE_ACCURACY_SEEK
+            stream_seek(is, (int64_t)(end * AV_TIME_BASE), start < end ? 1:-1);
+#else
             stream_seek(is, (int64_t)((get_master_clock(is) + end - start) * AV_TIME_BASE), start < end ? 1:-1);
+#endif
         } else {
             is->seeking = 1;
             start = pos;

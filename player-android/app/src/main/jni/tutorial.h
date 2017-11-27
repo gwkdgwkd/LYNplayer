@@ -24,6 +24,7 @@
 #define AUDIO_DIFF_AVG_NB 20
 #define DEFAULT_AV_SYNC_TYPE AV_SYNC_VIDEO_MASTER
 
+#define USE_ACCURACY_SEEK 1 //It's accurate, but it takes time
 //#define USE_SWS_CTX 1
 //#define USE_AUDIO_TRACK 1
 
@@ -117,6 +118,7 @@ typedef struct VideoState {
     int seek_req;
     int seek_flags;
     int64_t seek_pos;
+    int64_t seek_target;
 
     AVIOContext     *io_context;
     struct SwsContext *sws_ctx;

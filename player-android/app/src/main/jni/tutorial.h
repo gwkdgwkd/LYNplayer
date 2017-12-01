@@ -118,7 +118,8 @@ typedef struct VideoState {
     int seek_req;
     int seek_flags;
     int64_t seek_pos;
-    int64_t seek_target;
+    int64_t seek_target_v;
+    int64_t seek_target_a;
 
     AVIOContext     *io_context;
     struct SwsContext *sws_ctx;

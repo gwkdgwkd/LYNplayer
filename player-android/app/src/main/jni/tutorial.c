@@ -181,7 +181,7 @@ void videoDecodeThread(void *arg) {
         //LOGI("avcodec_decode_video2 time_use is %.10f\n",time_use);
 
 #if USE_ACCURACY_SEEK
-        if(1 == seekFlag && packet.pts < is->seek_target) {
+        if(1 == seekFlag && packet.pts < is->seek_target_v) {
             //accurate positioning, wrong location packages are discarded
             continue;
         }
@@ -371,7 +371,7 @@ void videoDisplayThread(JNIEnv *pEnv) {
         if(1 == vp->seekFlag) {
             pthread_mutex_lock(&is->seek_mutex);
             is->seeking = 0;
-            pthread_cond_signal(&is->seek_cond);
+            pthread_cond_broadcast(&is->seek_cond);
             pthread_mutex_unlock(&is->seek_mutex);
         }
 
@@ -618,17 +618,15 @@ int readPacketThread(void *arg) {
     while(!is->quit) {
         // seek stuff goes here
         if(is->seek_req) {
-            int stream_index = -1;
-            is->seek_target = is->seek_pos;
-            if(is->videoStream >= 0) {
-                stream_index = is->videoStream;
-            } else if(is->audioStream >= 0) {
-                stream_index = is->audioStream;
+            is->seek_target_v = is->seek_pos;
+            is->seek_target_a = is->seek_pos;
+            if(is->videoStream >= 0){
+                is->seek_target_v = av_rescale_q(is->seek_target_v, AV_TIME_BASE_Q, is->video_st->time_base);
             }
-            if(stream_index >= 0){
-                is->seek_target = av_rescale_q(is->seek_target, AV_TIME_BASE_Q, pFormatCtx->streams[stream_index]->time_base);
+            if(is->audioStream >= 0){
+                is->seek_target_a = av_rescale_q(is->seek_target_a, AV_TIME_BASE_Q, is->audio_st->time_base);
             }
-            if(av_seek_frame(is->pFormatCtx, stream_index, is->seek_target, is->seek_flags) < 0) {
+            if(av_seek_frame(is->pFormatCtx, is->videoStream, is->seek_target_v, is->seek_flags) < 0) {
                 LOGE("%s: error while seeking\n", is->pFormatCtx->filename);
             } else {
                 if(is->audioStream >= 0) {
@@ -893,6 +891,7 @@ static int audio_decode_frame(VideoState *is,double *pts_ptr) {
     int resampled_data_size;
     double pts;
     int n;
+    int seekFlag = 0;
 
     for(;;) {
         pthread_mutex_lock(&is->paused_mutex);
@@ -988,8 +987,22 @@ static int audio_decode_frame(VideoState *is,double *pts_ptr) {
         }
         if(pkt->data == flush_pkt.data) {
             avcodec_flush_buffers(is->audio_st->codec);
+            seekFlag = 1;
             continue;
         }
+#if USE_ACCURACY_SEEK
+        if(1 == seekFlag) {
+            if(pkt->pts < is->seek_target_a) {
+                //accurate positioning, wrong location packages are discarded
+                continue;
+            }
+            pthread_mutex_lock(&is->seek_mutex);
+            while(is->seeking) {
+                pthread_cond_wait(&is->seek_cond, &is->seek_mutex);
+            }
+            pthread_mutex_unlock(&is->seek_mutex);
+        }
+#endif
         is->audio_pkt_data = pkt->data;
         is->audio_pkt_size = pkt->size;
         /* if update, update the audio clock w/pts */
